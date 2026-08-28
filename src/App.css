@@ -1,0 +1,154 @@
+.app-shell {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.app-header h1 {
+  font-size: 24px;
+  margin: 0;
+  color: #1e2a22;
+}
+.app-sub {
+  color: #54614f;
+  margin: 4px 0 20px;
+}
+
+.tab-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #bfceb8;
+  margin-bottom: 20px;
+}
+.tab-btn {
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  color: #54614f;
+  border-bottom: 2px solid transparent;
+}
+.tab-btn.active {
+  color: #2c5282;
+  border-bottom: 2px solid #2c5282;
+  font-weight: bold;
+}
+
+.master-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.search-input {
+  flex: 1;
+  min-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid #bfceb8;
+  border-radius: 4px;
+}
+select {
+  padding: 8px 10px;
+  border: 1px solid #bfceb8;
+  border-radius: 4px;
+}
+
+.btn-primary {
+  background: #2c5282;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+}
+.btn-secondary {
+  background: transparent;
+  color: #54614f;
+  border: 1px solid #bfceb8;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.master-form {
+  background: #fff;
+  border: 1px solid #bfceb8;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.master-form h3 {
+  margin-top: 0;
+}
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.form-row label {
+  font-size: 13px;
+  color: #54614f;
+}
+.required {
+  color: #a8452c;
+  margin-left: 4px;
+}
+.form-row input,
+.form-row select,
+.form-row textarea {
+  padding: 8px 10px;
+  border: 1px solid #bfceb8;
+  border-radius: 4px;
+  font-family: inherit;
+}
+.form-error {
+  color: #a8452c;
+  margin-bottom: 12px;
+}
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.master-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #bfceb8;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.master-table th,
+.master-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8dd;
+  font-size: 14px;
+}
+.master-table th {
+  background: #eef3ea;
+  color: #54614f;
+  font-weight: normal;
+}
+.col-actions {
+  width: 70px;
+  text-align: right;
+}
+.icon-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 15px;
+  margin-left: 4px;
+}
+.empty-row {
+  text-align: center;
+  color: #9aa89a;
+  padding: 24px;
+}
