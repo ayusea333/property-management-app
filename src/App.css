@@ -152,3 +152,65 @@ select {
   color: #9aa89a;
   padding: 24px;
 }
+
+.top-tab-nav {
+  border-bottom: none;
+  margin-bottom: 4px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.card {
+  background: #fff;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  padding: 12px;
+}
+.card .label {
+  font-size: 11px;
+  color: #6b7280;
+}
+.card .num {
+  font-size: 19px;
+  font-weight: 750;
+  margin-top: 4px;
+}
+
+.amount {
+  text-align: right;
+}
+.center {
+  text-align: center;
+}
+.mini {
+  font-size: 12px;
+}
+
+.status {
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.status.ok {
+  background: #e9f7ee;
+  color: #176b35;
+}
+.status.warn {
+  background: #fff2d8;
+  color: #8a5b00;
+}
+.status.bad {
+  background: #fdecec;
+  color: #a12622;
+}
+
+@media (max-width: 850px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

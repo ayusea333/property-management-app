@@ -62,6 +62,12 @@ export const tenantFromRow = (r) => ({
   moveInDate: r.move_in_date || '',
   moveOutDate: r.move_out_date || '',
   note: r.note || '',
+  parkingFee: r.parking_fee ?? 0,
+  otherFee: r.other_fee ?? 0,
+  guarantor: r.guarantor || '',
+  debit: !!r.debit,
+  sendMethod: r.send_method || '',
+  sendDay: r.send_day || '',
 })
 export const tenantToRow = (t) => ({
   room_id: t.roomId || null,
@@ -70,6 +76,12 @@ export const tenantToRow = (t) => ({
   move_in_date: t.moveInDate || null,
   move_out_date: t.moveOutDate || null,
   note: t.note || null,
+  parking_fee: t.parkingFee || 0,
+  other_fee: t.otherFee || 0,
+  guarantor: t.guarantor || null,
+  debit: !!t.debit,
+  send_method: t.sendMethod || null,
+  send_day: t.sendDay || null,
 })
 
 export const clientFromRow = (r) => ({
