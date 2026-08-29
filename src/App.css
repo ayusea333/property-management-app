@@ -214,3 +214,37 @@ select {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+.panel {
+  background: #fff;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  padding: 16px;
+}
+.panel h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+  color: #1e2a22;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+.tabs .tab-btn {
+  border: 1px solid #bfceb8;
+  border-radius: 4px;
+  padding: 6px 12px;
+}
+.tabs .tab-btn.active {
+  background: #2c5282;
+  color: #fff;
+  border-color: #2c5282;
+}
+.tablewrap {
+  overflow-x: auto;
+}

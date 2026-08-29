@@ -44,6 +44,11 @@ export const roomFromRow = (r) => ({
   roomNumber: r.room_number,
   rent: r.rent ?? 0,
   commonFee: r.common_fee ?? 0,
+  parkingFee: r.parking_fee ?? 0,
+  bicycleFee: r.bicycle_fee ?? 0,
+  supportFee: r.support_fee ?? 0,
+  otherFee: r.other_fee ?? 0,
+  managementFee: r.management_fee ?? 0,
   note: r.note || '',
 })
 export const roomToRow = (r) => ({
@@ -51,6 +56,11 @@ export const roomToRow = (r) => ({
   room_number: r.roomNumber,
   rent: r.rent || 0,
   common_fee: r.commonFee || 0,
+  parking_fee: r.parkingFee || 0,
+  bicycle_fee: r.bicycleFee || 0,
+  support_fee: r.supportFee || 0,
+  other_fee: r.otherFee || 0,
+  management_fee: r.managementFee || 0,
   note: r.note || null,
 })
 
@@ -62,8 +72,6 @@ export const tenantFromRow = (r) => ({
   moveInDate: r.move_in_date || '',
   moveOutDate: r.move_out_date || '',
   note: r.note || '',
-  parkingFee: r.parking_fee ?? 0,
-  otherFee: r.other_fee ?? 0,
   guarantor: r.guarantor || '',
   debit: !!r.debit,
   sendMethod: r.send_method || '',
@@ -76,8 +84,6 @@ export const tenantToRow = (t) => ({
   move_in_date: t.moveInDate || null,
   move_out_date: t.moveOutDate || null,
   note: t.note || null,
-  parking_fee: t.parkingFee || 0,
-  other_fee: t.otherFee || 0,
   guarantor: t.guarantor || null,
   debit: !!t.debit,
   send_method: t.sendMethod || null,
