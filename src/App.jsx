@@ -992,56 +992,64 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <h1>建物管理台帳</h1>
-        <p className="app-sub">{TOP_TABS.find((t) => t.key === topTab)?.label}</p>
-      </header>
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <h1>建物管理台帳</h1>
+        </div>
 
-      <nav className="tab-nav top-tab-nav">
-        {TOP_TABS.map((t) => (
-          <button
-            key={t.key}
-            className={topTab === t.key ? 'tab-btn active' : 'tab-btn'}
-            onClick={() => setTopTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      {topTab === 'master' && (
-        <nav className="tab-nav">
-          {TABS.map((key) => (
+        <nav className="sidebar-nav">
+          {TOP_TABS.map((t) => (
             <button
-              key={key}
-              className={activeTab === key ? 'tab-btn active' : 'tab-btn'}
-              onClick={() => setActiveTab(key)}
+              key={t.key}
+              className={topTab === t.key ? 'sidebar-btn active' : 'sidebar-btn'}
+              onClick={() => setTopTab(t.key)}
             >
-              {MASTER_CONFIGS[key].label}
+              {t.label}
             </button>
           ))}
         </nav>
-      )}
 
-      <main className="app-main">
-        {loading && <p>読み込み中...</p>}
-        {loadError && <p className="form-error">{loadError}</p>}
-        {!loading && !loadError && topTab === 'master' && (
-          <MasterSection masterKey={activeTab} allRecords={allRecords} onChanged={loadAll} />
+        {topTab === 'master' && (
+          <nav className="sidebar-subnav">
+            <div className="sidebar-subnav-label">マスタ種別</div>
+            {TABS.map((key) => (
+              <button
+                key={key}
+                className={activeTab === key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                onClick={() => setActiveTab(key)}
+              >
+                {MASTER_CONFIGS[key].label}
+              </button>
+            ))}
+          </nav>
         )}
-        {!loading && !loadError && topTab === 'rentPayments' && (
-          <RentPaymentsSection allRecords={allRecords} rentPayments={rentPayments} onChanged={loadAll} />
-        )}
-        {!loading && !loadError && topTab === 'sales' && (
-          <SalesSection allRecords={allRecords} sales={sales} onChanged={loadAll} />
-        )}
-        {!loading && !loadError && topTab === 'expenses' && (
-          <ExpensesSection allRecords={allRecords} expenses={expenses} onChanged={loadAll} />
-        )}
-        {!loading && !loadError && topTab === 'dashboard' && (
-          <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} />
-        )}
-      </main>
+      </aside>
+
+      <div className="main-area">
+        <header className="main-header">
+          <h2>{TOP_TABS.find((t) => t.key === topTab)?.label}</h2>
+        </header>
+
+        <main className="app-main">
+          {loading && <p>読み込み中...</p>}
+          {loadError && <p className="form-error">{loadError}</p>}
+          {!loading && !loadError && topTab === 'master' && (
+            <MasterSection masterKey={activeTab} allRecords={allRecords} onChanged={loadAll} />
+          )}
+          {!loading && !loadError && topTab === 'rentPayments' && (
+            <RentPaymentsSection allRecords={allRecords} rentPayments={rentPayments} onChanged={loadAll} />
+          )}
+          {!loading && !loadError && topTab === 'sales' && (
+            <SalesSection allRecords={allRecords} sales={sales} onChanged={loadAll} />
+          )}
+          {!loading && !loadError && topTab === 'expenses' && (
+            <ExpensesSection allRecords={allRecords} expenses={expenses} onChanged={loadAll} />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && (
+            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} />
+          )}
+        </main>
+      </div>
     </div>
   )
 }
