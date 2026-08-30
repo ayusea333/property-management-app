@@ -22,9 +22,12 @@ import Dashboard from './Dashboard'
 import Login from './Login'
 import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
+import Backups from './Backups'
 import './App.css'
 
 // ---- マスタ種別ごとの設定 ----
+// fields: 一覧・フォームに表示する項目
+// relation: 他のマスタに紐づく場合の設定(親を選ぶセレクトボックスを出す)
 const MASTER_CONFIGS = {
   owners: {
     label: 'オーナー',
@@ -404,7 +407,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [selected, setSelected] = useState([])
-  const [payForm, setPayForm] = useState(null)
+  const [payForm, setPayForm] = useState(null) // { tenantId, date, amount, note }
   const [saving, setSaving] = useState(false)
 
   const rows = activeTenantsFor(allRecords, targetMonth).map((row) => {
@@ -1029,6 +1032,7 @@ const BASE_TOP_TABS = [
 const ADMIN_TOP_TABS = [
   { key: 'users', label: 'ユーザー管理' },
   { key: 'history', label: '変更履歴' },
+  { key: 'backups', label: 'バックアップ' },
 ]
 
 const PERM_FIELD_MAP = {
@@ -1217,6 +1221,9 @@ export default function App() {
           )}
           {topTab === 'history' && profile?.is_admin && (
             <EditHistory />
+          )}
+          {topTab === 'backups' && profile?.is_admin && (
+            <Backups onRestored={loadAll} />
           )}
         </main>
       </div>
