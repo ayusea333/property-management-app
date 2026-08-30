@@ -44,6 +44,14 @@ export default function UserManagement({ myProfile }) {
     if (err) alert('更新に失敗しました: ' + err.message)
   }
 
+  const toggleDisabled = async (p, value) => {
+    if (value && p.id === myProfile?.id) {
+      alert('自分自身は無効化できません。')
+      return
+    }
+    await updateField(p.id, 'is_disabled', value)
+  }
+
   if (loading) return <p>読み込み中...</p>
   if (error) return <p className="form-error">{error}</p>
 
@@ -51,7 +59,13 @@ export default function UserManagement({ myProfile }) {
     <div>
       <p className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
         新しいアカウントの発行は、Supabaseの管理画面(Authentication → Users)から行ってください。
-        ここでは発行済みのアカウントに、どのタブを編集できるかを設定します。「管理者」にチェックを入れると、そのアカウントは全タブ編集可能・このユーザー管理画面も使えるようになります。
+        ここでは発行済みのアカウントに、どのタブを編集できるかを設定します。「管理者」にチェックを入れると、そのアカウントは全タブ編集可能・この管理者メニューも使えるようになります。
+        「無効化」にチェックを入れると、そのアカウントはすぐにログインできなくなります(データやアカウント自体は消えません。チェックを外せば元に戻せます)。
+      </p>
+      <p className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+        アカウントを完全に削除したい場合(二度と使えないようにする場合)は、
+        <a href="https://supabase.com/dashboard/project/lrxnwogkkfwjozsncfod/auth/users" target="_blank" rel="noreferrer"> Supabaseの管理画面(Authentication → Users)</a>
+        から削除してください。
       </p>
       <div className="tablewrap">
         <table className="master-table">
@@ -61,6 +75,7 @@ export default function UserManagement({ myProfile }) {
               <th>メールアドレス</th>
               <th className="center">管理者</th>
               {PERM_FIELDS.map((f) => <th key={f.key} className="center">{f.label}</th>)}
+              <th className="center">無効化</th>
             </tr>
           </thead>
           <tbody>
@@ -93,10 +108,18 @@ export default function UserManagement({ myProfile }) {
                     />
                   </td>
                 ))}
+                <td className="center">
+                  <input
+                    type="checkbox"
+                    checked={!!p.is_disabled}
+                    disabled={savingId === p.id}
+                    onChange={(e) => toggleDisabled(p, e.target.checked)}
+                  />
+                </td>
               </tr>
             ))}
             {profiles.length === 0 && (
-              <tr><td colSpan={3 + PERM_FIELDS.length} className="empty-row">アカウントがありません</td></tr>
+              <tr><td colSpan={4 + PERM_FIELDS.length} className="empty-row">アカウントがありません</td></tr>
             )}
           </tbody>
         </table>
