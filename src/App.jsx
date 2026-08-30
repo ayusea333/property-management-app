@@ -1029,7 +1029,8 @@ const BASE_TOP_TABS = [
   { key: 'expenses', label: '経費' },
 ]
 
-const ADMIN_TOP_TABS = [
+const ADMIN_TAB = { key: 'admin', label: '管理者' }
+const ADMIN_SUB_TABS = [
   { key: 'users', label: 'ユーザー管理' },
   { key: 'history', label: '変更履歴' },
   { key: 'backups', label: 'バックアップ' },
@@ -1046,9 +1047,11 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [disabledNotice, setDisabledNotice] = useState('')
 
   const [topTab, setTopTab] = useState('dashboard')
   const [activeTab, setActiveTab] = useState('owners')
+  const [adminTab, setAdminTab] = useState('users')
   const [allRecords, setAllRecords] = useState({})
   const [rentPayments, setRentPayments] = useState([])
   const [sales, setSales] = useState([])
@@ -1072,7 +1075,14 @@ export default function App() {
       setProfile(null)
       return
     }
+    setDisabledNotice('')
     supabase.from('profiles').select('*').eq('id', session.user.id).single().then(({ data }) => {
+      if (data?.is_disabled) {
+        setDisabledNotice('このアカウントは無効化されています。責任者にお問い合わせください。')
+        setProfile(null)
+        supabase.auth.signOut()
+        return
+      }
       setProfile(data || null)
     })
   }, [session])
@@ -1122,12 +1132,23 @@ export default function App() {
     return <div className="app-shell"><p style={{ padding: 24 }}>読み込み中...</p></div>
   }
 
+  if (disabledNotice) {
+    return (
+      <div className="login-shell">
+        <div className="login-box">
+          <h1>建物管理台帳</h1>
+          <p className="form-error" style={{ marginTop: 16 }}>{disabledNotice}</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!session) {
     return <Login />
   }
 
   const canEdit = (key) => !!profile?.is_admin || !!profile?.[PERM_FIELD_MAP[key]]
-  const topTabs = profile?.is_admin ? [...BASE_TOP_TABS, ...ADMIN_TOP_TABS] : BASE_TOP_TABS
+  const topTabs = profile?.is_admin ? [...BASE_TOP_TABS, ADMIN_TAB] : BASE_TOP_TABS
 
   return (
     <div className="app-shell">
@@ -1158,6 +1179,21 @@ export default function App() {
                 onClick={() => setActiveTab(key)}
               >
                 {MASTER_CONFIGS[key].label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {topTab === 'admin' && (
+          <nav className="sidebar-subnav">
+            <div className="sidebar-subnav-label">管理者メニュー</div>
+            {ADMIN_SUB_TABS.map((t) => (
+              <button
+                key={t.key}
+                className={adminTab === t.key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                onClick={() => setAdminTab(t.key)}
+              >
+                {t.label}
               </button>
             ))}
           </nav>
@@ -1216,14 +1252,12 @@ export default function App() {
           {!loading && !loadError && topTab === 'dashboard' && (
             <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} />
           )}
-          {topTab === 'users' && profile?.is_admin && (
-            <UserManagement myProfile={profile} />
-          )}
-          {topTab === 'history' && profile?.is_admin && (
-            <EditHistory />
-          )}
-          {topTab === 'backups' && profile?.is_admin && (
-            <Backups onRestored={loadAll} />
+          {topTab === 'admin' && profile?.is_admin && (
+            <>
+              {adminTab === 'users' && <UserManagement myProfile={profile} />}
+              {adminTab === 'history' && <EditHistory />}
+              {adminTab === 'backups' && <Backups onRestored={loadAll} />}
+            </>
           )}
         </main>
       </div>
