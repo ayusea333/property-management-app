@@ -17,12 +17,14 @@ import { expenseFromRow, expenseToRow } from './lib/expenses'
 import {
   fiscalYearLabel, fiscalMonths, currentFiscalStartYear,
 } from './lib/period'
+import { logEdit } from './lib/editLog'
 import Dashboard from './Dashboard'
+import Login from './Login'
+import UserManagement from './UserManagement'
+import EditHistory from './EditHistory'
 import './App.css'
 
 // ---- マスタ種別ごとの設定 ----
-// fields: 一覧・フォームに表示する項目
-// relation: 他のマスタに紐づく場合の設定(親を選ぶセレクトボックスを出す)
 const MASTER_CONFIGS = {
   owners: {
     label: 'オーナー',
@@ -126,7 +128,11 @@ function emptyForm(fields) {
   return f
 }
 
-function MasterSection({ masterKey, allRecords, onChanged }) {
+function recordLabel(record) {
+  return record?.name || record?.roomNumber || ''
+}
+
+function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
   const config = MASTER_CONFIGS[masterKey]
   const records = allRecords[masterKey] || []
   const [search, setSearch] = useState('')
@@ -186,7 +192,8 @@ function MasterSection({ masterKey, allRecords, onChanged }) {
     setError('')
     try {
       const row = config.toRow(form)
-      if (editingId === 'new') {
+      const isNew = editingId === 'new'
+      if (isNew) {
         const { error: err } = await supabase.from(config.table).insert(row)
         if (err) throw err
       } else {
@@ -194,6 +201,12 @@ function MasterSection({ masterKey, allRecords, onChanged }) {
         if (err) throw err
       }
       await onChanged()
+      await logEdit({
+        user,
+        tableLabel: config.label,
+        action: isNew ? '追加' : '編集',
+        summary: recordLabel(form),
+      })
       cancelEdit()
     } catch (e) {
       setError('保存に失敗しました: ' + e.message)
@@ -202,14 +215,15 @@ function MasterSection({ masterKey, allRecords, onChanged }) {
     }
   }
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (record) => {
     if (!confirm('削除しますか?この操作は取り消せません。')) return
-    const { error: err } = await supabase.from(config.table).delete().eq('id', id)
+    const { error: err } = await supabase.from(config.table).delete().eq('id', record.id)
     if (err) {
       alert('削除に失敗しました: ' + err.message)
       return
     }
     await onChanged()
+    await logEdit({ user, tableLabel: config.label, action: '削除', summary: recordLabel(record) })
   }
 
   const relationLabel = (relKey, id) => {
@@ -235,10 +249,16 @@ function MasterSection({ masterKey, allRecords, onChanged }) {
             <option value="moved-out">退去済み</option>
           </select>
         )}
-        <button className="btn-primary" onClick={startNew}>+ 新規登録</button>
+        {canEdit && <button className="btn-primary" onClick={startNew}>+ 新規登録</button>}
       </div>
 
-      {editingId && (
+      {!canEdit && (
+        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+          閲覧のみできます(編集権限がありません)
+        </div>
+      )}
+
+      {canEdit && editingId && (
         <div className="master-form">
           <h3>{editingId === 'new' ? `${config.label}を新規登録` : `${config.label}を編集`}</h3>
           {config.fields.map((field) => (
@@ -300,7 +320,7 @@ function MasterSection({ masterKey, allRecords, onChanged }) {
             {config.fields.filter((f) => !f.textarea).map((f) => (
               <th key={f.key}>{f.label}</th>
             ))}
-            <th className="col-actions"></th>
+            {canEdit && <th className="col-actions"></th>}
           </tr>
         </thead>
         <tbody>
@@ -315,10 +335,12 @@ function MasterSection({ masterKey, allRecords, onChanged }) {
                     : String(record[f.key] ?? '')}
                 </td>
               ))}
-              <td className="col-actions">
-                <button className="icon-btn" title="編集" onClick={() => startEdit(record)}>✎</button>
-                <button className="icon-btn" title="削除" onClick={() => handleDelete(record.id)}>🗑</button>
-              </td>
+              {canEdit && (
+                <td className="col-actions">
+                  <button className="icon-btn" title="編集" onClick={() => startEdit(record)}>✎</button>
+                  <button className="icon-btn" title="削除" onClick={() => handleDelete(record)}>🗑</button>
+                </td>
+              )}
             </tr>
           ))}
           {filtered.length === 0 && (
@@ -377,12 +399,12 @@ function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
 }
 
-function RentPaymentsSection({ allRecords, rentPayments, onChanged }) {
+function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, user }) {
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [selected, setSelected] = useState([])
-  const [payForm, setPayForm] = useState(null) // { tenantId, date, amount, note }
+  const [payForm, setPayForm] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const rows = activeTenantsFor(allRecords, targetMonth).map((row) => {
@@ -455,6 +477,12 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged }) {
       const target = rows.find((r) => r.tenant.id === payForm.tenantId)
       if (target) await postManagementFeeIfNeeded({ ...target, payment: { paymentDate: payForm.date } })
       await onChanged()
+      await logEdit({
+        user,
+        tableLabel: '家賃入金',
+        action: '記録',
+        summary: `${target?.tenant?.name || ''} ${formatMonthLabel(targetMonth)}分 入金日: ${payForm.date}`,
+      })
       setPayForm(null)
     } catch (e) {
       alert('保存に失敗しました: ' + e.message)
@@ -478,6 +506,12 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged }) {
         await postManagementFeeIfNeeded({ ...row, payment: { paymentDate: date } })
       }
       await onChanged()
+      await logEdit({
+        user,
+        tableLabel: '家賃入金',
+        action: '記録',
+        summary: `${formatMonthLabel(targetMonth)}分 ${selected.length}件をまとめて入金済みに(入金日: ${date})`,
+      })
       setSelected([])
     } catch (e) {
       alert('保存に失敗しました: ' + e.message)
@@ -519,8 +553,16 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button className="btn-primary" onClick={markSelectedPaid} disabled={saving}>選択を入金済みにする</button>
+        {canEdit && (
+          <button className="btn-primary" onClick={markSelectedPaid} disabled={saving}>選択を入金済みにする</button>
+        )}
       </div>
+
+      {!canEdit && (
+        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+          閲覧のみできます(編集権限がありません)
+        </div>
+      )}
 
       {payForm && (
         <div className="master-form">
@@ -572,7 +614,11 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged }) {
         <tbody>
           {filtered.map((row) => (
             <tr key={row.tenant.id}>
-              <td><input type="checkbox" checked={selected.includes(row.tenant.id)} onChange={() => toggleSelect(row.tenant.id)} /></td>
+              <td>
+                {canEdit && (
+                  <input type="checkbox" checked={selected.includes(row.tenant.id)} onChange={() => toggleSelect(row.tenant.id)} />
+                )}
+              </td>
               <td>
                 {row.paid
                   ? <span className="status ok">入金済</span>
@@ -595,8 +641,10 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged }) {
               <td className="center">{row.tenant.debit ? '○' : ''}</td>
               <td>
                 {row.payment
-                  ? <span>{row.payment.paymentDate} <button className="icon-btn" onClick={() => openPayForm(row)}>✎</button></span>
-                  : <button className="btn-secondary" onClick={() => openPayForm(row)}>入金日を入力</button>}
+                  ? <span>{row.payment.paymentDate} {canEdit && <button className="icon-btn" onClick={() => openPayForm(row)}>✎</button>}</span>
+                  : canEdit
+                  ? <button className="btn-secondary" onClick={() => openPayForm(row)}>入金日を入力</button>
+                  : ''}
               </td>
             </tr>
           ))}
@@ -646,7 +694,7 @@ function emptySaleForm() {
   return { date: new Date().toISOString().slice(0, 10), category: SALES_CATEGORIES[0], propertyId: '', roomId: '', content: '', amount: 0 }
 }
 
-function SalesSection({ allRecords, sales, onChanged }) {
+function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
   const [form, setForm] = useState(emptySaleForm())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -686,6 +734,7 @@ function SalesSection({ allRecords, sales, onChanged }) {
       const { error: err } = await supabase.from('sales').insert(row)
       if (err) throw err
       await onChanged()
+      await logEdit({ user, tableLabel: '売上', action: '追加', summary: `${form.category} ${form.content || ''} ${yen(form.amount)}` })
       setForm(emptySaleForm())
     } catch (e) {
       setError('保存に失敗しました: ' + e.message)
@@ -694,11 +743,12 @@ function SalesSection({ allRecords, sales, onChanged }) {
     }
   }
 
-  const deleteSale = async (id) => {
+  const deleteSale = async (sale) => {
     if (!confirm('削除しますか?')) return
-    const { error: err } = await supabase.from('sales').delete().eq('id', id)
+    const { error: err } = await supabase.from('sales').delete().eq('id', sale.id)
     if (err) { alert('削除に失敗しました: ' + err.message); return }
     await onChanged()
+    await logEdit({ user, tableLabel: '売上', action: '削除', summary: `${sale.category} ${sale.content || ''} ${yen(sale.amount)}` })
   }
 
   const toggleSelect = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
@@ -710,14 +760,17 @@ function SalesSection({ allRecords, sales, onChanged }) {
     if (!newDate) return
     setSaving(true)
     try {
+      let count = 0
       for (const id of selected) {
         const s = sales.find((x) => x.id === id)
         if (!s || s.source !== 'manual') continue
         const row = saleToRow({ ...s, date: newDate, source: 'manual' })
         const { error: err } = await supabase.from('sales').insert(row)
         if (err) throw err
+        count++
       }
       await onChanged()
+      await logEdit({ user, tableLabel: '売上', action: '追加', summary: `${count}件を${newDate}付けで複製` })
       setSelected([])
     } catch (e) {
       alert('コピーに失敗しました: ' + e.message)
@@ -728,38 +781,44 @@ function SalesSection({ allRecords, sales, onChanged }) {
 
   return (
     <div>
-      <div className="master-form">
-        <h3>売上入力</h3>
-        <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-        <div className="form-row">
-          <label>物件</label>
-          <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
-            <option value="">(なし)</option>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-        {form.propertyId && (
+      {canEdit ? (
+        <div className="master-form">
+          <h3>売上入力</h3>
+          <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
-            <label>号室</label>
-            <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
+            <label>物件</label>
+            <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
               <option value="">(なし)</option>
-              {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-        )}
-        <div className="form-row">
-          <label>カテゴリ</label>
-          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-            {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          {form.propertyId && (
+            <div className="form-row">
+              <label>号室</label>
+              <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
+                <option value="">(なし)</option>
+                {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="form-row">
+            <label>カテゴリ</label>
+            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
+          <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="form-actions">
+            <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
+          </div>
         </div>
-        <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
-        <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-        {error && <div className="form-error">{error}</div>}
-        <div className="form-actions">
-          <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
+      ) : (
+        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+          閲覧のみできます(編集権限がありません)
         </div>
-      </div>
+      )}
 
       <div className="master-toolbar">
         <PeriodFilter year={periodYear} month={periodMonth} onYear={setPeriodYear} onMonth={setPeriodMonth} />
@@ -768,8 +827,12 @@ function SalesSection({ allRecords, sales, onChanged }) {
           {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
-        <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
+        {canEdit && (
+          <>
+            <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
+            <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
+          </>
+        )}
       </div>
       <div className="mini" style={{ marginBottom: 8, color: '#54614f' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
 
@@ -780,7 +843,7 @@ function SalesSection({ allRecords, sales, onChanged }) {
         <tbody>
           {filtered.map((s) => (
             <tr key={s.id}>
-              <td><input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSelect(s.id)} /></td>
+              <td>{canEdit && <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSelect(s.id)} />}</td>
               <td>{s.date}</td>
               <td>{s.category}{s.source !== 'manual' && <span className="mini"> (自動)</span>}</td>
               <td>{propertyName(s.propertyId)}</td>
@@ -788,7 +851,7 @@ function SalesSection({ allRecords, sales, onChanged }) {
               <td>{ownerName(s.ownerId)}</td>
               <td>{s.content}</td>
               <td className="amount">{s.amount.toLocaleString()}</td>
-              <td>{s.source === 'manual' && <button className="icon-btn" onClick={() => deleteSale(s.id)}>🗑</button>}</td>
+              <td>{canEdit && s.source === 'manual' && <button className="icon-btn" onClick={() => deleteSale(s)}>🗑</button>}</td>
             </tr>
           ))}
           {filtered.length === 0 && <tr><td colSpan={9} className="empty-row">データがありません</td></tr>}
@@ -804,7 +867,7 @@ function emptyExpenseForm() {
   return { date: new Date().toISOString().slice(0, 10), propertyId: '', roomId: '', category: '', content: '', payee: '', amount: 0 }
 }
 
-function ExpensesSection({ allRecords, expenses, onChanged }) {
+function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const [form, setForm] = useState(emptyExpenseForm())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -837,6 +900,7 @@ function ExpensesSection({ allRecords, expenses, onChanged }) {
       const { error: err } = await supabase.from('expenses').insert(expenseToRow(form))
       if (err) throw err
       await onChanged()
+      await logEdit({ user, tableLabel: '経費', action: '追加', summary: `${form.category || ''} ${form.content || ''} ${yen(form.amount)}` })
       setForm(emptyExpenseForm())
     } catch (e) {
       setError('保存に失敗しました: ' + e.message)
@@ -845,11 +909,12 @@ function ExpensesSection({ allRecords, expenses, onChanged }) {
     }
   }
 
-  const deleteExpense = async (id) => {
+  const deleteExpense = async (expense) => {
     if (!confirm('削除しますか?')) return
-    const { error: err } = await supabase.from('expenses').delete().eq('id', id)
+    const { error: err } = await supabase.from('expenses').delete().eq('id', expense.id)
     if (err) { alert('削除に失敗しました: ' + err.message); return }
     await onChanged()
+    await logEdit({ user, tableLabel: '経費', action: '削除', summary: `${expense.category || ''} ${expense.content || ''} ${yen(expense.amount)}` })
   }
 
   const toggleSelect = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
@@ -861,13 +926,16 @@ function ExpensesSection({ allRecords, expenses, onChanged }) {
     if (!newDate) return
     setSaving(true)
     try {
+      let count = 0
       for (const id of selected) {
         const e = expenses.find((x) => x.id === id)
         if (!e) continue
         const { error: err } = await supabase.from('expenses').insert(expenseToRow({ ...e, date: newDate }))
         if (err) throw err
+        count++
       }
       await onChanged()
+      await logEdit({ user, tableLabel: '経費', action: '追加', summary: `${count}件を${newDate}付けで複製` })
       setSelected([])
     } catch (e) {
       alert('コピーに失敗しました: ' + e.message)
@@ -878,40 +946,50 @@ function ExpensesSection({ allRecords, expenses, onChanged }) {
 
   return (
     <div>
-      <div className="master-form">
-        <h3>経費入力</h3>
-        <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-        <div className="form-row">
-          <label>物件</label>
-          <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
-            <option value="">(なし)</option>
-            {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-        {form.propertyId && (
+      {canEdit ? (
+        <div className="master-form">
+          <h3>経費入力</h3>
+          <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
-            <label>号室</label>
-            <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
+            <label>物件</label>
+            <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
               <option value="">(なし)</option>
-              {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
+              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
-        )}
-        <div className="form-row"><label>カテゴリ</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="例: 日常清掃 外注費" /></div>
-        <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
-        <div className="form-row"><label>支払先</label><input value={form.payee} onChange={(e) => setForm({ ...form, payee: e.target.value })} /></div>
-        <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-        {error && <div className="form-error">{error}</div>}
-        <div className="form-actions">
-          <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
+          {form.propertyId && (
+            <div className="form-row">
+              <label>号室</label>
+              <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
+                <option value="">(なし)</option>
+                {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="form-row"><label>カテゴリ</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="例: 日常清掃 外注費" /></div>
+          <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
+          <div className="form-row"><label>支払先</label><input value={form.payee} onChange={(e) => setForm({ ...form, payee: e.target.value })} /></div>
+          <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="form-actions">
+            <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+          閲覧のみできます(編集権限がありません)
+        </div>
+      )}
 
       <div className="master-toolbar">
         <PeriodFilter year={periodYear} month={periodMonth} onYear={setPeriodYear} onMonth={setPeriodMonth} />
         <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
-        <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
+        {canEdit && (
+          <>
+            <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
+            <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
+          </>
+        )}
       </div>
       <div className="mini" style={{ marginBottom: 8, color: '#54614f' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
 
@@ -922,7 +1000,7 @@ function ExpensesSection({ allRecords, expenses, onChanged }) {
         <tbody>
           {filtered.map((e) => (
             <tr key={e.id}>
-              <td><input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggleSelect(e.id)} /></td>
+              <td>{canEdit && <input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggleSelect(e.id)} />}</td>
               <td>{e.date}</td>
               <td>{propertyName(e.propertyId)}</td>
               <td>{roomLabel(e.roomId)}</td>
@@ -930,7 +1008,7 @@ function ExpensesSection({ allRecords, expenses, onChanged }) {
               <td>{e.content}</td>
               <td>{e.payee}</td>
               <td className="amount">{e.amount.toLocaleString()}</td>
-              <td><button className="icon-btn" onClick={() => deleteExpense(e.id)}>🗑</button></td>
+              <td>{canEdit && <button className="icon-btn" onClick={() => deleteExpense(e)}>🗑</button>}</td>
             </tr>
           ))}
           {filtered.length === 0 && <tr><td colSpan={9} className="empty-row">データがありません</td></tr>}
@@ -940,7 +1018,7 @@ function ExpensesSection({ allRecords, expenses, onChanged }) {
   )
 }
 
-const TOP_TABS = [
+const BASE_TOP_TABS = [
   { key: 'dashboard', label: 'ダッシュボード' },
   { key: 'master', label: 'マスタ管理' },
   { key: 'rentPayments', label: '家賃入金' },
@@ -948,7 +1026,23 @@ const TOP_TABS = [
   { key: 'expenses', label: '経費' },
 ]
 
+const ADMIN_TOP_TABS = [
+  { key: 'users', label: 'ユーザー管理' },
+  { key: 'history', label: '変更履歴' },
+]
+
+const PERM_FIELD_MAP = {
+  master: 'can_edit_master',
+  rentPayments: 'can_edit_rent_payments',
+  sales: 'can_edit_sales',
+  expenses: 'can_edit_expenses',
+}
+
 export default function App() {
+  const [session, setSession] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
   const [topTab, setTopTab] = useState('dashboard')
   const [activeTab, setActiveTab] = useState('owners')
   const [allRecords, setAllRecords] = useState({})
@@ -957,6 +1051,27 @@ export default function App() {
   const [expenses, setExpenses] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setAuthLoading(false)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setSession(sess)
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!session?.user) {
+      setProfile(null)
+      return
+    }
+    supabase.from('profiles').select('*').eq('id', session.user.id).single().then(({ data }) => {
+      setProfile(data || null)
+    })
+  }, [session])
 
   const loadAll = async () => {
     setLoadError('')
@@ -988,7 +1103,27 @@ export default function App() {
     }
   }
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => {
+    if (session?.user) {
+      setLoading(true)
+      loadAll()
+    }
+  }, [session])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+  }
+
+  if (authLoading) {
+    return <div className="app-shell"><p style={{ padding: 24 }}>読み込み中...</p></div>
+  }
+
+  if (!session) {
+    return <Login />
+  }
+
+  const canEdit = (key) => !!profile?.is_admin || !!profile?.[PERM_FIELD_MAP[key]]
+  const topTabs = profile?.is_admin ? [...BASE_TOP_TABS, ...ADMIN_TOP_TABS] : BASE_TOP_TABS
 
   return (
     <div className="app-shell">
@@ -998,7 +1133,7 @@ export default function App() {
         </div>
 
         <nav className="sidebar-nav">
-          {TOP_TABS.map((t) => (
+          {topTabs.map((t) => (
             <button
               key={t.key}
               className={topTab === t.key ? 'sidebar-btn active' : 'sidebar-btn'}
@@ -1023,30 +1158,65 @@ export default function App() {
             ))}
           </nav>
         )}
+
+        <div className="sidebar-footer">
+          <div className="sidebar-user">{profile?.display_name || session.user.email}</div>
+          <button className="sidebar-btn" onClick={handleLogout}>ログアウト</button>
+        </div>
       </aside>
 
       <div className="main-area">
         <header className="main-header">
-          <h2>{TOP_TABS.find((t) => t.key === topTab)?.label}</h2>
+          <h2>{topTabs.find((t) => t.key === topTab)?.label}</h2>
         </header>
 
         <main className="app-main">
           {loading && <p>読み込み中...</p>}
           {loadError && <p className="form-error">{loadError}</p>}
           {!loading && !loadError && topTab === 'master' && (
-            <MasterSection masterKey={activeTab} allRecords={allRecords} onChanged={loadAll} />
+            <MasterSection
+              masterKey={activeTab}
+              allRecords={allRecords}
+              onChanged={loadAll}
+              canEdit={canEdit('master')}
+              user={session.user}
+            />
           )}
           {!loading && !loadError && topTab === 'rentPayments' && (
-            <RentPaymentsSection allRecords={allRecords} rentPayments={rentPayments} onChanged={loadAll} />
+            <RentPaymentsSection
+              allRecords={allRecords}
+              rentPayments={rentPayments}
+              onChanged={loadAll}
+              canEdit={canEdit('rentPayments')}
+              user={session.user}
+            />
           )}
           {!loading && !loadError && topTab === 'sales' && (
-            <SalesSection allRecords={allRecords} sales={sales} onChanged={loadAll} />
+            <SalesSection
+              allRecords={allRecords}
+              sales={sales}
+              onChanged={loadAll}
+              canEdit={canEdit('sales')}
+              user={session.user}
+            />
           )}
           {!loading && !loadError && topTab === 'expenses' && (
-            <ExpensesSection allRecords={allRecords} expenses={expenses} onChanged={loadAll} />
+            <ExpensesSection
+              allRecords={allRecords}
+              expenses={expenses}
+              onChanged={loadAll}
+              canEdit={canEdit('expenses')}
+              user={session.user}
+            />
           )}
           {!loading && !loadError && topTab === 'dashboard' && (
             <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} />
+          )}
+          {topTab === 'users' && profile?.is_admin && (
+            <UserManagement myProfile={profile} />
+          )}
+          {topTab === 'history' && profile?.is_admin && (
+            <EditHistory />
           )}
         </main>
       </div>
