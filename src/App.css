@@ -1,17 +1,118 @@
-.app-shell {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 24px 16px 64px;
+* {
+  box-sizing: border-box;
+}
+html, body, #root {
+  height: 100%;
 }
 
-.app-header h1 {
-  font-size: 24px;
+.app-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
+  background: #f4f6f2;
+}
+
+/* ---- 左サイドバー(ナビゲーション) ---- */
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: #1e2a22;
+  color: #fff;
+  padding: 20px 12px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.sidebar-header h1 {
+  font-size: 16px;
+  margin: 0 8px 20px;
+  color: #fff;
+  line-height: 1.4;
+}
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+.sidebar-subnav-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 8px 6px;
+}
+.sidebar-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  cursor: pointer;
+}
+.sidebar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.sidebar-btn.active {
+  background: #2c5282;
+  color: #fff;
+  font-weight: bold;
+}
+.sidebar-btn.sub {
+  font-size: 13px;
+  padding: 8px 12px 8px 18px;
+}
+
+/* ---- 右側メインエリア ---- */
+.main-area {
+  flex: 1;
+  min-width: 0;
+  padding: 20px 24px 64px;
+}
+.main-header {
+  border-bottom: 1px solid #bfceb8;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+}
+.main-header h2 {
   margin: 0;
+  font-size: 20px;
   color: #1e2a22;
 }
-.app-sub {
-  color: #54614f;
-  margin: 4px 0 20px;
+
+@media (max-width: 760px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    padding: 12px;
+  }
+  .sidebar-nav,
+  .sidebar-subnav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .sidebar-subnav {
+    border-top: none;
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+  .main-area {
+    padding: 16px 14px 48px;
+  }
 }
 
 .tab-nav {
@@ -41,6 +142,10 @@
   gap: 8px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  padding: 10px;
 }
 .search-input {
   flex: 1;
