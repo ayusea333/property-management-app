@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { supabase } from './lib/supabase'
 import {
   ownerFromRow, ownerToRow,
@@ -36,7 +36,7 @@ const MASTER_CONFIGS = {
     toRow: ownerToRow,
     fields: [
       { key: 'name', label: '名前', required: true },
-      { key: 'kana', label: 'フリガナ' },
+{ key: 'kana', label: 'フリガナ', hideInList: true },
       { key: 'phone', label: '電話番号' },
       { key: 'email', label: 'メールアドレス' },
       { key: 'address', label: '住所' },
@@ -70,7 +70,8 @@ const MASTER_CONFIGS = {
       { key: 'commonFee', label: '共益費', type: 'number' },
       { key: 'parkingFee', label: '駐車場代', type: 'number' },
       { key: 'bicycleFee', label: '駐輪場代', type: 'number' },
-      { key: 'supportFee', label: '安サポ', type: 'number' },
+     { key: 'supportFee', label: '安サポ', type: 'number' },
+      { key: 'supportFeeType', label: '安サポの支払い', options: ['月払い', '年払い'] },
       { key: 'otherFee', label: 'その他費用', type: 'number' },
       { key: 'managementFee', label: '管理料(月額)', type: 'number' },
       { key: 'note', label: '備考', textarea: true },
@@ -101,11 +102,12 @@ const MASTER_CONFIGS = {
     fromRow: clientFromRow,
     toRow: clientToRow,
     fields: [
-      { key: 'name', label: '名前', required: true },
+       { key: 'name', label: '名前', required: true },
       { key: 'category', label: '分類' },
       { key: 'contact', label: '連絡先' },
+      { key: 'address', label: '住所' },
+      { key: 'contactPerson', label: '担当者' },
       { key: 'note', label: '備考', textarea: true },
-    ],
   },
   vendors: {
     label: '業者',
@@ -116,6 +118,8 @@ const MASTER_CONFIGS = {
       { key: 'name', label: '名前', required: true },
       { key: 'category', label: '分類' },
       { key: 'contact', label: '連絡先' },
+      { key: 'address', label: '住所' },
+      { key: 'contactPerson', label: '担当者' },
       { key: 'note', label: '備考', textarea: true },
     ],
   },
@@ -320,7 +324,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
       <table className="master-table">
         <thead>
           <tr>
-            {config.fields.filter((f) => !f.textarea).map((f) => (
+                      {config.fields.filter((f) => !f.textarea && !f.hideInList).map((f) => (
               <th key={f.key}>{f.label}</th>
             ))}
             {canEdit && <th className="col-actions"></th>}
@@ -329,7 +333,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
         <tbody>
           {filtered.map((record) => (
             <tr key={record.id}>
-              {config.fields.filter((f) => !f.textarea).map((f) => (
+              {config.fields.filter((f) => !f.textarea && !f.hideInList).map((f) => (
                 <td key={f.key}>
                   {f.relation
                     ? relationLabel(f.relation, record[f.key])
@@ -374,7 +378,8 @@ function activeTenantsFor(allRecords, targetMonth) {
       const commonFee = room?.commonFee || 0
       const parkingFee = room?.parkingFee || 0
       const bicycleFee = room?.bicycleFee || 0
-      const supportFee = room?.supportFee || 0
+      // 安サポが年払いの部屋は、毎月の家賃合計には含めない
+      const supportFee = room?.supportFeeType === '年払い' ? 0 : (room?.supportFee || 0)
       const otherFee = room?.otherFee || 0
       return {
         tenant: t,
@@ -567,28 +572,6 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
         </div>
       )}
 
-      {payForm && (
-        <div className="master-form">
-          <h3>{formatMonthLabel(targetMonth)}分の入金を記録</h3>
-          <div className="form-row">
-            <label>入金日</label>
-            <input type="date" value={payForm.date} onChange={(e) => setPayForm({ ...payForm, date: e.target.value })} />
-          </div>
-          <div className="form-row">
-            <label>入金額</label>
-            <input type="number" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
-          </div>
-          <div className="form-row">
-            <label>備考</label>
-            <input value={payForm.note} onChange={(e) => setPayForm({ ...payForm, note: e.target.value })} />
-          </div>
-          <div className="form-actions">
-            <button className="btn-primary" onClick={savePayment} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
-            <button className="btn-secondary" onClick={() => setPayForm(null)}>キャンセル</button>
-          </div>
-        </div>
-      )}
-
       <div className="mini" style={{ marginBottom: 8, color: '#54614f' }}>
         表示中: {formatMonthLabel(targetMonth)}分
       </div>
@@ -614,42 +597,73 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
             <th>{formatMonthLabel(targetMonth)}分 入金日</th>
           </tr>
         </thead>
-        <tbody>
+               <tbody>
           {filtered.map((row) => (
-            <tr key={row.tenant.id}>
-              <td>
-                {canEdit && (
-                  <input type="checkbox" checked={selected.includes(row.tenant.id)} onChange={() => toggleSelect(row.tenant.id)} />
-                )}
-              </td>
-              <td>
-                {row.paid
-                  ? <span className="status ok">入金済</span>
-                  : row.arrears >= 2
-                  ? <span className="status bad">{row.arrears}か月滞納</span>
-                  : <span className="status warn">未入金</span>}
-              </td>
-              <td>{row.owner?.name || ''}</td>
-              <td>{row.property?.name || ''}</td>
-              <td>{row.room?.roomNumber || ''}</td>
-              <td>{row.tenant.name}</td>
-              <td className="amount">{yen(row.rent)}</td>
-              <td className="amount">{yen(row.commonFee)}</td>
-              <td className="amount">{yen(row.parkingFee)}</td>
-              <td className="amount">{yen(row.bicycleFee)}</td>
-              <td className="amount">{yen(row.supportFee)}</td>
-              <td className="amount">{yen(row.otherFee)}</td>
-              <td className="amount">{yen(row.total)}</td>
-              <td>{row.tenant.guarantor}</td>
-              <td className="center">{row.tenant.debit ? '○' : ''}</td>
-              <td>
-                {row.payment
-                  ? <span>{row.payment.paymentDate} {canEdit && <button className="icon-btn" onClick={() => openPayForm(row)}>✎</button>}</span>
-                  : canEdit
-                  ? <button className="btn-secondary" onClick={() => openPayForm(row)}>入金日を入力</button>
-                  : ''}
-              </td>
-            </tr>
+            <Fragment key={row.tenant.id}>
+              <tr>
+                <td>
+                  {canEdit && (
+                    <input type="checkbox" checked={selected.includes(row.tenant.id)} onChange={() => toggleSelect(row.tenant.id)} />
+                  )}
+                </td>
+                <td>
+                  {row.paid
+                    ? <span className="status ok">入金済</span>
+                    : row.arrears >= 2
+                    ? <span className="status bad">{row.arrears}か月滞納</span>
+                    : <span className="status warn">未入金</span>}
+                </td>
+                <td>{row.owner?.name || ''}</td>
+                <td>{row.property?.name || ''}</td>
+                <td>{row.room?.roomNumber || ''}</td>
+                <td>{row.tenant.name}</td>
+                <td className="amount">{yen(row.rent)}</td>
+                <td className="amount">{yen(row.commonFee)}</td>
+                <td className="amount">{yen(row.parkingFee)}</td>
+                <td className="amount">{yen(row.bicycleFee)}</td>
+                <td className="amount">
+                  {row.room?.supportFeeType === '年払い'
+                    ? <span className="mini">年払い({yen(row.room.supportFee)})</span>
+                    : yen(row.supportFee)}
+                </td>
+                <td className="amount">{yen(row.otherFee)}</td>
+                <td className="amount">{yen(row.total)}</td>
+                <td>{row.tenant.guarantor}</td>
+                <td className="center">{row.tenant.debit ? '○' : ''}</td>
+                <td>
+                  {row.payment
+                    ? <span>{row.payment.paymentDate} {canEdit && <button className="icon-btn" onClick={() => openPayForm(row)}>✎</button>}</span>
+                    : canEdit
+                    ? <button className="btn-secondary" onClick={() => openPayForm(row)}>入金日を入力</button>
+                    : ''}
+                </td>
+              </tr>
+              {payForm && payForm.tenantId === row.tenant.id && (
+                <tr>
+                  <td colSpan={16} style={{ background: '#f4f6f2' }}>
+                    <div className="master-form" style={{ margin: '8px 0' }}>
+                      <h3>{row.tenant.name}様 {formatMonthLabel(targetMonth)}分の入金を記録</h3>
+                      <div className="form-row">
+                        <label>入金日</label>
+                        <input type="date" value={payForm.date} onChange={(e) => setPayForm({ ...payForm, date: e.target.value })} />
+                      </div>
+                      <div className="form-row">
+                        <label>入金額</label>
+                        <input type="number" value={payForm.amount} onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })} />
+                      </div>
+                      <div className="form-row">
+                        <label>備考</label>
+                        <input value={payForm.note} onChange={(e) => setPayForm({ ...payForm, note: e.target.value })} />
+                      </div>
+                      <div className="form-actions">
+                        <button className="btn-primary" onClick={savePayment} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+                        <button className="btn-secondary" onClick={() => setPayForm(null)}>キャンセル</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
           {filtered.length === 0 && (
             <tr><td colSpan={16} className="empty-row">対象の契約がありません</td></tr>
