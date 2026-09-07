@@ -47,6 +47,7 @@ export const roomFromRow = (r) => ({
   parkingFee: r.parking_fee ?? 0,
   bicycleFee: r.bicycle_fee ?? 0,
   supportFee: r.support_fee ?? 0,
+  supportFeeType: r.support_fee_type || '月払い',
   otherFee: r.other_fee ?? 0,
   managementFee: r.management_fee ?? 0,
   note: r.note || '',
@@ -59,6 +60,7 @@ export const roomToRow = (r) => ({
   parking_fee: r.parkingFee || 0,
   bicycle_fee: r.bicycleFee || 0,
   support_fee: r.supportFee || 0,
+  support_fee_type: r.supportFeeType || '月払い',
   other_fee: r.otherFee || 0,
   management_fee: r.managementFee || 0,
   note: r.note || null,
@@ -74,35 +76,3 @@ export const tenantFromRow = (r) => ({
   note: r.note || '',
   guarantor: r.guarantor || '',
   debit: !!r.debit,
-  sendMethod: r.send_method || '',
-  sendDay: r.send_day || '',
-})
-export const tenantToRow = (t) => ({
-  room_id: t.roomId || null,
-  name: t.name,
-  contact: t.contact || null,
-  move_in_date: t.moveInDate || null,
-  move_out_date: t.moveOutDate || null,
-  note: t.note || null,
-  guarantor: t.guarantor || null,
-  debit: !!t.debit,
-  send_method: t.sendMethod || null,
-  send_day: t.sendDay || null,
-})
-
-export const clientFromRow = (r) => ({
-  id: r.id,
-  name: r.name,
-  category: r.category || '',
-  contact: r.contact || '',
-  note: r.note || '',
-})
-export const clientToRow = (c) => ({
-  name: c.name,
-  category: c.category || null,
-  contact: c.contact || null,
-  note: c.note || null,
-})
-
-export const vendorFromRow = clientFromRow
-export const vendorToRow = clientToRow
