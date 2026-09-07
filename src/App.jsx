@@ -107,7 +107,8 @@ const MASTER_CONFIGS = {
       { key: 'contact', label: '連絡先' },
       { key: 'address', label: '住所' },
       { key: 'contactPerson', label: '担当者' },
-      { key: 'note', label: '備考', textarea: true },
+       { key: 'note', label: '備考', textarea: true },
+    ],
   },
   vendors: {
     label: '業者',
