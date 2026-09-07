@@ -212,4 +212,34 @@ function RentStatusPanel({ allRecords, rentPayments }) {
               </tr>
             ))}
             {Object.keys(byProperty).length === 0 && (
-              <tr><td
+              <tr><td colSpan={5} className="empty-row">対象の契約がありません</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+export default function Dashboard({ allRecords, sales, expenses, rentPayments }) {
+  const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
+  const [granularity, setGranularity] = useState('month')
+
+  const yearOptions = []
+  const cur = currentFiscalStartYear()
+  for (let y = cur; y >= cur - 4; y--) yearOptions.push(y)
+
+  const months = fiscalMonths(fiscalYear)
+  const monthSet = new Set(months)
+
+  const salesInYear = useMemo(
+    () => sales.filter((s) => monthSet.has(monthOf(s.date))),
+    [sales, fiscalYear]
+  )
+  const expensesInYear = useMemo(
+    () => expenses.filter((e) => monthSet.has(monthOf(e.date))),
+    [expenses, fiscalYear]
+  )
+
+  const totalSales = salesInYear.reduce((z, s) => z + s.amount, 0)
+  const
