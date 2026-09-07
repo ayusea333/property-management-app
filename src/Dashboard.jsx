@@ -242,4 +242,70 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments })
   )
 
   const totalSales = salesInYear.reduce((z, s) => z + s.amount, 0)
-  const
+  const totalExpenses = expensesInYear.reduce((z, e) => z + e.amount, 0)
+  const profit = totalSales - totalExpenses
+
+  const donutData = SALES_CATEGORIES
+    .map((cat, i) => ({
+      label: cat,
+      value: salesInYear.filter((s) => s.category === cat).reduce((z, s) => z + s.amount, 0),
+      color: CATEGORY_COLORS[i],
+    }))
+    .filter((d) => d.value > 0)
+
+  let barData = []
+  if (granularity === 'month') {
+    barData = months.map((m) => ({
+      label: `${Number(m.slice(5))}月`,
+      value: sales.filter((s) => monthOf(s.date) === m).reduce((z, s) => z + s.amount, 0),
+    }))
+  } else if (granularity === 'half') {
+    const { h1, h2 } = fiscalHalves(fiscalYear)
+    const sum = (ms) => sales.filter((s) => ms.includes(monthOf(s.date))).reduce((z, s) => z + s.amount, 0)
+    barData = [
+      { label: '上期', value: sum(h1) },
+      { label: '下期', value: sum(h2) },
+    ]
+  } else {
+    barData = yearOptions.slice().reverse().map((y) => {
+      const ms = new Set(fiscalMonths(y))
+      const value = sales.filter((s) => ms.has(monthOf(s.date))).reduce((z, s) => z + s.amount, 0)
+      return { label: `${y}期`, value }
+    })
+  }
+
+  return (
+    <div>
+      <div className="master-toolbar">
+        <select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}>
+          {yearOptions.map((y) => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
+        </select>
+      </div>
+
+      <div className="cards">
+        <StatCard label="売上" value={yen(totalSales)} />
+        <StatCard label="支出" value={yen(totalExpenses)} />
+        <StatCard label="利益" value={yen(profit)} />
+      </div>
+
+      <RentStatusPanel allRecords={allRecords} rentPayments={rentPayments} />
+
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <h2>カテゴリ別売上構成({fiscalYearLabel(fiscalYear)})</h2>
+        <DonutChart data={donutData} />
+      </div>
+
+      <div className="panel">
+        <div className="toolbar" style={{ marginBottom: 10 }}>
+          <h2 style={{ marginRight: 'auto' }}>売上の推移</h2>
+          <div className="tabs">
+            <button className={granularity === 'month' ? 'tab-btn active' : 'tab-btn'} onClick={() => setGranularity('month')}>月次</button>
+            <button className={granularity === 'half' ? 'tab-btn active' : 'tab-btn'} onClick={() => setGranularity('half')}>半期</button>
+            <button className={granularity === 'year' ? 'tab-btn active' : 'tab-btn'} onClick={() => setGranularity('year')}>年次</button>
+          </div>
+        </div>
+        <BarChart data={barData} />
+      </div>
+    </div>
+  )
+}
