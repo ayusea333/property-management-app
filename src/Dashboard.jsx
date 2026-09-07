@@ -113,8 +113,9 @@ function BarChart({ data }) {
   const max = Math.max(1, ...data.map((d) => d.value))
   const width = Math.max(320, data.length * 64)
   const height = 200
+  const bottomPad = 48 // 月ラベル+金額ラベル分の余白(数字が見切れないように下に確保)
+  const chartH = height - bottomPad
   const barW = Math.min(40, (width / data.length) * 0.5)
-  const chartH = height - 30
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -135,11 +136,9 @@ function BarChart({ data }) {
               <text x={x + barW / 2} y={chartH + 16} textAnchor="middle" fontSize="11" fill="#898781">
                 {d.label}
               </text>
-              {hover === i && (
-                <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="11" fontWeight="700" fill="#0b0b0b">
-                  {yen(d.value)}
-                </text>
-              )}
+              <text x={x + barW / 2} y={chartH + 32} textAnchor="middle" fontSize="11" fontWeight="700" fill="#0b0b0b">
+                {yen(d.value)}
+              </text>
             </g>
           )
         })}
@@ -161,8 +160,9 @@ function activeContractsFor(allRecords, month) {
       const room = rooms.find((r) => r.id === t.roomId)
       const property = room ? properties.find((p) => p.id === room.propertyId) : null
       const owner = property ? owners.find((o) => o.id === property.ownerId) : null
+      const supportFee = room?.supportFeeType === '年払い' ? 0 : (room?.supportFee || 0)
       const total = (room?.rent || 0) + (room?.commonFee || 0) + (room?.parkingFee || 0)
-        + (room?.bicycleFee || 0) + (room?.supportFee || 0) + (room?.otherFee || 0)
+        + (room?.bicycleFee || 0) + supportFee + (room?.otherFee || 0)
       return { tenant: t, room, property, owner, total }
     })
 }
@@ -212,100 +212,4 @@ function RentStatusPanel({ allRecords, rentPayments }) {
               </tr>
             ))}
             {Object.keys(byProperty).length === 0 && (
-              <tr><td colSpan={5} className="empty-row">対象の契約がありません</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-export default function Dashboard({ allRecords, sales, expenses, rentPayments }) {
-  const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
-  const [granularity, setGranularity] = useState('month')
-
-  const yearOptions = []
-  const cur = currentFiscalStartYear()
-  for (let y = cur; y >= cur - 4; y--) yearOptions.push(y)
-
-  const months = fiscalMonths(fiscalYear)
-  const monthSet = new Set(months)
-
-  const salesInYear = useMemo(
-    () => sales.filter((s) => monthSet.has(monthOf(s.date))),
-    [sales, fiscalYear]
-  )
-  const expensesInYear = useMemo(
-    () => expenses.filter((e) => monthSet.has(monthOf(e.date))),
-    [expenses, fiscalYear]
-  )
-
-  const totalSales = salesInYear.reduce((z, s) => z + s.amount, 0)
-  const totalExpenses = expensesInYear.reduce((z, e) => z + e.amount, 0)
-  const profit = totalSales - totalExpenses
-
-  const donutData = SALES_CATEGORIES
-    .map((cat, i) => ({
-      label: cat,
-      value: salesInYear.filter((s) => s.category === cat).reduce((z, s) => z + s.amount, 0),
-      color: CATEGORY_COLORS[i],
-    }))
-    .filter((d) => d.value > 0)
-
-  let barData = []
-  if (granularity === 'month') {
-    barData = months.map((m) => ({
-      label: `${Number(m.slice(5))}月`,
-      value: sales.filter((s) => monthOf(s.date) === m).reduce((z, s) => z + s.amount, 0),
-    }))
-  } else if (granularity === 'half') {
-    const { h1, h2 } = fiscalHalves(fiscalYear)
-    const sum = (ms) => sales.filter((s) => ms.includes(monthOf(s.date))).reduce((z, s) => z + s.amount, 0)
-    barData = [
-      { label: '上期', value: sum(h1) },
-      { label: '下期', value: sum(h2) },
-    ]
-  } else {
-    barData = yearOptions.slice().reverse().map((y) => {
-      const ms = new Set(fiscalMonths(y))
-      const value = sales.filter((s) => ms.has(monthOf(s.date))).reduce((z, s) => z + s.amount, 0)
-      return { label: `${y}期`, value }
-    })
-  }
-
-  return (
-    <div>
-      <div className="master-toolbar">
-        <select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}>
-          {yearOptions.map((y) => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
-        </select>
-      </div>
-
-      <div className="cards">
-        <StatCard label="売上" value={yen(totalSales)} />
-        <StatCard label="支出" value={yen(totalExpenses)} />
-        <StatCard label="利益" value={yen(profit)} />
-      </div>
-
-      <RentStatusPanel allRecords={allRecords} rentPayments={rentPayments} />
-
-      <div className="panel" style={{ marginBottom: 16 }}>
-        <h2>カテゴリ別売上構成({fiscalYearLabel(fiscalYear)})</h2>
-        <DonutChart data={donutData} />
-      </div>
-
-      <div className="panel">
-        <div className="toolbar" style={{ marginBottom: 10 }}>
-          <h2 style={{ marginRight: 'auto' }}>売上の推移</h2>
-          <div className="tabs">
-            <button className={granularity === 'month' ? 'tab-btn active' : 'tab-btn'} onClick={() => setGranularity('month')}>月次</button>
-            <button className={granularity === 'half' ? 'tab-btn active' : 'tab-btn'} onClick={() => setGranularity('half')}>半期</button>
-            <button className={granularity === 'year' ? 'tab-btn active' : 'tab-btn'} onClick={() => setGranularity('year')}>年次</button>
-          </div>
-        </div>
-        <BarChart data={barData} />
-      </div>
-    </div>
-  )
-}
+              <tr><td
