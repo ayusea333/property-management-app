@@ -54,7 +54,7 @@ export default function Backups({ onRestored }) {
 
   return (
     <div>
-      <p className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+      <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
         3時間ごとに自動でバックアップが作成されます(直近60件、約7〜8日分を保存します)。
         「今すぐバックアップを作成」で、いつでも手動でも作成できます。
       </p>
