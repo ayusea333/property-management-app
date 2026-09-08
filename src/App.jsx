@@ -24,6 +24,7 @@ import Login from './Login'
 import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
 import Backups from './Backups'
+import ReportSection from './ReportSection'
 import './App.css'
 
 // ---- マスタ種別ごとの設定 ----
@@ -719,7 +720,7 @@ function inPeriod(dateStr, year, month) {
 // ---- 売上一覧・入力 ----
 
 function emptySaleForm() {
-  return { date: new Date().toISOString().slice(0, 10), category: SALES_CATEGORIES[0], propertyId: '', roomId: '', content: '', amount: 0 }
+  return { date: new Date().toISOString().slice(0, 10), category: SALES_CATEGORIES[0], propertyId: '', roomId: '', content: '', amount: 0, depositAmount: '' }
 }
 
 function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
@@ -768,6 +769,24 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
       const row = saleToRow({ ...form, ownerId: property?.ownerId || '', source: 'manual' })
       const { error: err } = await supabase.from('sales').insert(row)
       if (err) throw err
+
+      // レントスペース: 予約売上と実際の入金額の差額を、サイト・決済手数料として経費に自動計上する
+      if (form.category === 'レントスペース' && form.depositAmount !== '') {
+        const fee = Number(form.amount) - Number(form.depositAmount)
+        if (fee > 0) {
+          const { error: feeErr } = await supabase.from('expenses').insert({
+            date: form.date,
+            property_id: form.propertyId || null,
+            room_id: form.roomId || null,
+            category: 'レントスペース',
+            content: 'サイト・決済手数料(自動計算)',
+            payee: '(サイト手数料)',
+            amount: fee,
+          })
+          if (feeErr) throw feeErr
+        }
+      }
+
       await onChanged()
       await logEdit({ user, tableLabel: '売上', action: '追加', summary: `${form.category} ${form.content || ''} ${yen(form.amount)}` })
       setForm(emptySaleForm())
@@ -843,7 +862,16 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
             </select>
           </div>
           <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
-          <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          <div className="form-row"><label>金額(予約売上)</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          {form.category === 'レントスペース' && (
+            <div className="form-row">
+              <label>実際の入金額</label>
+              <div>
+                <input type="number" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })} style={{ width: 120 }} />
+                <div className="mini" style={{ color: '#54614f' }}>予約サイトからの実際の振込額。金額(予約売上)より少ない場合、差額を「サイト・決済手数料」として経費に自動登録します。分からない場合は空欄でOK。</div>
+              </div>
+            </div>
+          )}
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
             <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
@@ -1009,8 +1037,14 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
               </select>
             </div>
           )}
-          <div className="form-row"><label>カテゴリ</label><input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="例: 日常清掃 外注費" /></div>
-          <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
+          <div className="form-row">
+            <label>項目</label>
+            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              <option value="">(未選択)</option>
+              {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 日常清掃 外注費" /></div>
           <div className="form-row"><label>支払先</label><input value={form.payee} onChange={(e) => setForm({ ...form, payee: e.target.value })} /></div>
           <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
           {error && <div className="form-error">{error}</div>}
@@ -1068,6 +1102,7 @@ const BASE_TOP_TABS = [
   { key: 'rentPayments', label: '家賃入金' },
   { key: 'sales', label: '売上' },
   { key: 'expenses', label: '経費' },
+  { key: 'report', label: '決算レポート' },
 ]
 
 const ADMIN_TAB = { key: 'admin', label: '管理者' }
@@ -1134,174 +1169,4 @@ export default function App() {
       const results = {}
       for (const key of TABS) {
         const config = MASTER_CONFIGS[key]
-        const { data, error } = await supabase.from(config.table).select('*').order('created_at')
-        if (error) throw error
-        results[key] = (data || []).map(config.fromRow)
-      }
-      setAllRecords(results)
-
-      const { data: rpData, error: rpError } = await supabase.from('rent_payments').select('*')
-      if (rpError) throw rpError
-      setRentPayments((rpData || []).map(rentPaymentFromRow))
-
-      const { data: saleData, error: saleError } = await supabase.from('sales').select('*')
-      if (saleError) throw saleError
-      setSales((saleData || []).map(saleFromRow))
-
-      const { data: expData, error: expError } = await supabase.from('expenses').select('*')
-      if (expError) throw expError
-      setExpenses((expData || []).map(expenseFromRow))
-    } catch (e) {
-      setLoadError('データの読み込みに失敗しました: ' + e.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    if (session?.user) {
-      setLoading(true)
-      loadAll()
-    }
-  }, [session])
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-  }
-
-  if (authLoading) {
-    return <div className="app-shell"><p style={{ padding: 24 }}>読み込み中...</p></div>
-  }
-
-  if (disabledNotice) {
-    return (
-      <div className="login-shell">
-        <div className="login-box">
-          <h1>建物管理台帳</h1>
-          <p className="form-error" style={{ marginTop: 16 }}>{disabledNotice}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!session) {
-    return <Login />
-  }
-
-  const canEdit = (key) => !!profile?.is_admin || !!profile?.[PERM_FIELD_MAP[key]]
-  const topTabs = profile?.is_admin ? [...BASE_TOP_TABS, ADMIN_TAB] : BASE_TOP_TABS
-
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <h1>建物管理台帳</h1>
-        </div>
-
-        <nav className="sidebar-nav">
-          {topTabs.map((t) => (
-            <button
-              key={t.key}
-              className={topTab === t.key ? 'sidebar-btn active' : 'sidebar-btn'}
-              onClick={() => setTopTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-
-        {topTab === 'master' && (
-          <nav className="sidebar-subnav">
-            <div className="sidebar-subnav-label">マスタ種別</div>
-            {TABS.map((key) => (
-              <button
-                key={key}
-                className={activeTab === key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
-                onClick={() => setActiveTab(key)}
-              >
-                {MASTER_CONFIGS[key].label}
-              </button>
-            ))}
-          </nav>
-        )}
-
-        {topTab === 'admin' && (
-          <nav className="sidebar-subnav">
-            <div className="sidebar-subnav-label">管理者メニュー</div>
-            {ADMIN_SUB_TABS.map((t) => (
-              <button
-                key={t.key}
-                className={adminTab === t.key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
-                onClick={() => setAdminTab(t.key)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </nav>
-        )}
-
-        <div className="sidebar-footer">
-          <div className="sidebar-user">{profile?.display_name || session.user.email}</div>
-          <button className="sidebar-btn" onClick={handleLogout}>ログアウト</button>
-        </div>
-      </aside>
-
-      <div className="main-area">
-        <header className="main-header">
-          <h2>{topTabs.find((t) => t.key === topTab)?.label}</h2>
-        </header>
-
-        <main className="app-main">
-          {loading && <p>読み込み中...</p>}
-          {loadError && <p className="form-error">{loadError}</p>}
-          {!loading && !loadError && topTab === 'master' && (
-            <MasterSection
-              masterKey={activeTab}
-              allRecords={allRecords}
-              onChanged={loadAll}
-              canEdit={canEdit('master')}
-              user={session.user}
-            />
-          )}
-          {!loading && !loadError && topTab === 'rentPayments' && (
-            <RentPaymentsSection
-              allRecords={allRecords}
-              rentPayments={rentPayments}
-              onChanged={loadAll}
-              canEdit={canEdit('rentPayments')}
-              user={session.user}
-            />
-          )}
-          {!loading && !loadError && topTab === 'sales' && (
-            <SalesSection
-              allRecords={allRecords}
-              sales={sales}
-              onChanged={loadAll}
-              canEdit={canEdit('sales')}
-              user={session.user}
-            />
-          )}
-          {!loading && !loadError && topTab === 'expenses' && (
-            <ExpensesSection
-              allRecords={allRecords}
-              expenses={expenses}
-              onChanged={loadAll}
-              canEdit={canEdit('expenses')}
-              user={session.user}
-            />
-          )}
-          {!loading && !loadError && topTab === 'dashboard' && (
-            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} />
-          )}
-          {topTab === 'admin' && profile?.is_admin && (
-            <>
-              {adminTab === 'users' && <UserManagement myProfile={profile} />}
-              {adminTab === 'history' && <EditHistory />}
-              {adminTab === 'backups' && <Backups onRestored={loadAll} />}
-            </>
-          )}
-        </main>
-      </div>
-    </div>
-  )
-}
+        const { data,
