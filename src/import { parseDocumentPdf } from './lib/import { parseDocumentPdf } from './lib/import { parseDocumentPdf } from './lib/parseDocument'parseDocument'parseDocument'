@@ -189,12 +189,20 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
     setError('')
   }
 
-  const handleSave = async () => {
+   const handleSave = async () => {
     for (const field of config.fields) {
       if (field.required && !form[field.key]) {
         setError(`「${field.label}」は必須です`)
         return
       }
+      if (field.type === 'number' && Number(form[field.key]) < 0) {
+        setError(`「${field.label}」にマイナスの金額は入力できません`)
+        return
+      }
+    }
+    if (masterKey === 'tenants' && form.moveInDate && form.moveOutDate && form.moveOutDate < form.moveInDate) {
+      setError('「退去日」が「入居日」より前になっています')
+      return
     }
     setSaving(true)
     setError('')
@@ -469,8 +477,9 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
     if (error) throw error
   }
 
-  const savePayment = async () => {
+   const savePayment = async () => {
     if (!payForm.date) { alert('入金日を入力してください'); return }
+    if (Number(payForm.amount) < 0) { alert('入金額にマイナスの金額は入力できません'); return }
     setSaving(true)
     try {
       const row = rentPaymentToRow({
@@ -742,8 +751,15 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
     .sort((a, b) => (a.date < b.date ? 1 : -1))
   const periodTotal = filtered.reduce((z, s) => z + s.amount, 0)
 
+   const exportCsv = () => {
+    const headers = ['日付', 'カテゴリ', '物件', '号室', 'オーナー', '内容', '金額']
+    const rows = filtered.map((s) => [s.date, s.category, propertyName(s.propertyId), roomLabel(s.roomId), ownerName(s.ownerId), s.content, s.amount])
+    downloadCsv(`売上_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
+  }
+
   const submit = async () => {
     if (!form.date || !form.amount) { setError('日付と金額は必須です'); return }
+    if (Number(form.amount) < 0) { setError('金額にマイナスの金額は入力できません'); return }
     setSaving(true)
     setError('')
     try {
@@ -844,7 +860,8 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
           <option value="">全カテゴリ</option>
           {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
+               <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <button className="btn-secondary" onClick={exportCsv}>CSVダウンロード</button>
         {canEdit && (
           <>
             <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
@@ -910,8 +927,15 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
     .sort((a, b) => (a.date < b.date ? 1 : -1))
   const periodTotal = filtered.reduce((z, e) => z + e.amount, 0)
 
+  const exportCsv = () => {
+    const headers = ['日付', '物件', '号室', 'カテゴリ', '内容', '支払先', '金額']
+    const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount])
+    downloadCsv(`経費_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
+  }
+
   const submit = async () => {
     if (!form.date || !form.amount) { setError('日付と金額は必須です'); return }
+    if (Number(form.amount) < 0) { setError('金額にマイナスの金額は入力できません'); return }
     setSaving(true)
     setError('')
     try {
@@ -1002,6 +1026,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
       <div className="master-toolbar">
         <PeriodFilter year={periodYear} month={periodMonth} onYear={setPeriodYear} onMonth={setPeriodMonth} />
         <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <button className="btn-secondary" onClick={exportCsv}>CSVダウンロード</button>
         {canEdit && (
           <>
             <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
@@ -1013,6 +1038,8 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
 
       <table className="master-table">
         <thead>
+          <tr><th></th><th>日付</th><th>物件</th><th>号室</th><th>カテゴリ</th><th>内容</th><th>支払先</th><th className="amount">金額</th><th></th></tr>
+        </thead>
           <tr><th></th><th>日付</th><th>物件</th><th>号室</th><th>カテゴリ</th><th>内容</th><th>支払先</th><th className="amount">金額</th><th></th></tr>
         </thead>
         <tbody>
