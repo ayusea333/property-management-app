@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from 'react'
+import { useEffect, useState, Fragment, useRef } from 'react'
 import { supabase } from './lib/supabase'
 import {
   ownerFromRow, ownerToRow,
@@ -18,7 +18,7 @@ import {
   fiscalYearLabel, fiscalMonths, currentFiscalStartYear,
 } from './lib/period'
 import { logEdit } from './lib/editLog'
-import { downloadCsv } from './lib/csv'
+import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
 import Login from './Login'
 import UserManagement from './UserManagement'
@@ -717,6 +717,19 @@ function inPeriod(dateStr, year, month) {
   return m === month
 }
 
+// CSVインポート用: "2026/9/1" 「2026-09-01」などをYYYY-MM-DDに正規化する。読めない場合は空文字。
+function normalizeDate(s) {
+  const m = String(s || '').trim().match(/^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})/)
+  if (!m) return ''
+  const [, y, mo, d] = m
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+// CSVインポート用: 金額欄の "¥" "," "円" や空白を取り除いて数値化する
+function parseAmountCell(s) {
+  const cleaned = String(s || '').trim().replace(/[¥,円\s]/g, '')
+  return cleaned === '' ? NaN : Number(cleaned)
+}
 // ---- 売上一覧・入力 ----
 
 function emptySaleForm() {
@@ -732,6 +745,9 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
   const [selected, setSelected] = useState([])
   const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
   const [periodMonth, setPeriodMonth] = useState('all')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
+  const fileInputRef = useRef(null)
 
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
@@ -757,6 +773,78 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
     const headers = ['日付', 'カテゴリ', '物件', '号室', 'オーナー', '内容', '金額']
     const rows = filtered.map((s) => [s.date, s.category, propertyName(s.propertyId), roomLabel(s.roomId), ownerName(s.ownerId), s.content, s.amount])
     downloadCsv(`売上_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
+  }
+
+  const openImport = () => fileInputRef.current?.click()
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const text = await file.text()
+      const csvRows = parseCsv(text)
+      if (csvRows.length < 2) {
+        setImportResult({ ok: 0, errors: ['データ行が見つかりません。1行目に見出し、2行目以降にデータを入れてください。'] })
+        return
+      }
+      const header = csvRows[0].map((h) => h.trim())
+      const col = (name) => header.indexOf(name)
+      const dateIdx = col('日付'), catIdx = col('カテゴリ'), propIdx = col('物件'), roomIdx = col('号室'), contentIdx = col('内容'), amountIdx = col('金額')
+      if (dateIdx === -1 || catIdx === -1 || amountIdx === -1) {
+        setImportResult({ ok: 0, errors: ['見出し行に「日付」「カテゴリ」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
+        return
+      }
+
+      const toInsert = []
+      const errors = []
+      csvRows.slice(1).forEach((r, i) => {
+        const lineNo = i + 2
+        const rawDate = r[dateIdx] || ''
+        const date = normalizeDate(rawDate)
+        const category = (r[catIdx] || '').trim()
+        const propName = propIdx > -1 ? (r[propIdx] || '').trim() : ''
+        const roomNumber = roomIdx > -1 ? (r[roomIdx] || '').trim() : ''
+        const content = contentIdx > -1 ? (r[contentIdx] || '').trim() : ''
+        const amount = parseAmountCell(amountIdx > -1 ? r[amountIdx] : '')
+
+        if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
+        if (!SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: カテゴリ「${category}」が見つかりません`); return }
+        if (Number.isNaN(amount) || amount < 0) { errors.push(`${lineNo}行目: 金額が正しくありません(${r[amountIdx] || ''})`); return }
+
+        let propertyId = ''
+        if (propName) {
+          const p = properties.find((x) => x.name === propName)
+          if (!p) { errors.push(`${lineNo}行目: 物件「${propName}」が見つかりません`); return }
+          propertyId = p.id
+        }
+        let roomId = ''
+        if (roomNumber) {
+          const rm = rooms.find((x) => x.propertyId === propertyId && x.roomNumber === roomNumber)
+          if (!rm) { errors.push(`${lineNo}行目: 号室「${roomNumber}」が見つかりません`); return }
+          roomId = rm.id
+        }
+        const property = properties.find((p) => p.id === propertyId)
+        toInsert.push(saleToRow({ date, category, propertyId, roomId, ownerId: property?.ownerId || '', content, amount, source: 'manual' }))
+      })
+
+      if (toInsert.length) {
+        const chunkSize = 200
+        for (let i = 0; i < toInsert.length; i += chunkSize) {
+          const { error: err } = await supabase.from('sales').insert(toInsert.slice(i, i + chunkSize))
+          if (err) throw err
+        }
+        await onChanged()
+        await logEdit({ user, tableLabel: '売上', action: '追加', summary: `CSVインポートで${toInsert.length}件を追加` })
+      }
+      setImportResult({ ok: toInsert.length, errors })
+    } catch (e) {
+      setImportResult({ ok: 0, errors: ['インポートに失敗しました: ' + e.message] })
+    } finally {
+      setImporting(false)
+    }
   }
 
   const submit = async () => {
@@ -893,16 +981,35 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
         <button className="btn-secondary" onClick={exportCsv}>CSVダウンロード</button>
         {canEdit && (
           <>
+            <button className="btn-secondary" onClick={openImport} disabled={importing}>{importing ? 'インポート中...' : 'CSVインポート'}</button>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
             <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
             <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
           </>
         )}
       </div>
-      <div className="mini" style={{ marginBottom: 8, color: '#54614f' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
+      {importResult && (
+        <div className="mini" style={{ marginBottom: 8, color: importResult.errors.length ? '#a11615' : '#6b6167' }}>
+          {importResult.ok > 0 && <div>{importResult.ok}件を追加しました。</div>}
+          {importResult.errors.length > 0 && (
+            <div>
+              {importResult.errors.length}件のエラー:
+              <ul style={{ margin: '4px 0 0 18px' }}>
+                {importResult.errors.slice(0, 20).map((msg, i) => <li key={i}>{msg}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
+      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
+        CSVインポートは「CSVダウンロード」した形式(日付・カテゴリ・物件・号室・オーナー・内容・金額)のまま、行を追加・編集して読み込んでください。カテゴリ・物件・号室は既存の表記と完全一致している必要があります。
+      </div>
 
       <table className="master-table">
         <thead>
           <tr><th></th><th>日付</th><th>カテゴリ</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th></th></tr>
+        </thead>
         </thead>
         <tbody>
           {filtered.map((s) => (
@@ -939,7 +1046,9 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const [selected, setSelected] = useState([])
   const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
   const [periodMonth, setPeriodMonth] = useState('all')
-
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
+  const fileInputRef = useRef(null)
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
   const roomOptions = rooms.filter((r) => r.propertyId === form.propertyId)
@@ -960,6 +1069,78 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
     const headers = ['日付', '物件', '号室', 'カテゴリ', '内容', '支払先', '金額']
     const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount])
     downloadCsv(`経費_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
+  }
+
+  const openImport = () => fileInputRef.current?.click()
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const text = await file.text()
+      const csvRows = parseCsv(text)
+      if (csvRows.length < 2) {
+        setImportResult({ ok: 0, errors: ['データ行が見つかりません。1行目に見出し、2行目以降にデータを入れてください。'] })
+        return
+      }
+      const header = csvRows[0].map((h) => h.trim())
+      const col = (name) => header.indexOf(name)
+      const dateIdx = col('日付'), propIdx = col('物件'), roomIdx = col('号室'), catIdx = col('カテゴリ'), contentIdx = col('内容'), payeeIdx = col('支払先'), amountIdx = col('金額')
+      if (dateIdx === -1 || amountIdx === -1) {
+        setImportResult({ ok: 0, errors: ['見出し行に「日付」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
+        return
+      }
+
+      const toInsert = []
+      const errors = []
+      csvRows.slice(1).forEach((r, i) => {
+        const lineNo = i + 2
+        const rawDate = r[dateIdx] || ''
+        const date = normalizeDate(rawDate)
+        const category = catIdx > -1 ? (r[catIdx] || '').trim() : ''
+        const propName = propIdx > -1 ? (r[propIdx] || '').trim() : ''
+        const roomNumber = roomIdx > -1 ? (r[roomIdx] || '').trim() : ''
+        const content = contentIdx > -1 ? (r[contentIdx] || '').trim() : ''
+        const payee = payeeIdx > -1 ? (r[payeeIdx] || '').trim() : ''
+        const amount = parseAmountCell(amountIdx > -1 ? r[amountIdx] : '')
+
+        if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
+        if (category && !SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: カテゴリ「${category}」が見つかりません`); return }
+        if (Number.isNaN(amount) || amount < 0) { errors.push(`${lineNo}行目: 金額が正しくありません(${r[amountIdx] || ''})`); return }
+
+        let propertyId = ''
+        if (propName) {
+          const p = properties.find((x) => x.name === propName)
+          if (!p) { errors.push(`${lineNo}行目: 物件「${propName}」が見つかりません`); return }
+          propertyId = p.id
+        }
+        let roomId = ''
+        if (roomNumber) {
+          const rm = rooms.find((x) => x.propertyId === propertyId && x.roomNumber === roomNumber)
+          if (!rm) { errors.push(`${lineNo}行目: 号室「${roomNumber}」が見つかりません`); return }
+          roomId = rm.id
+        }
+        toInsert.push(expenseToRow({ date, propertyId, roomId, category, content, payee, amount }))
+      })
+
+      if (toInsert.length) {
+        const chunkSize = 200
+        for (let i = 0; i < toInsert.length; i += chunkSize) {
+          const { error: err } = await supabase.from('expenses').insert(toInsert.slice(i, i + chunkSize))
+          if (err) throw err
+        }
+        await onChanged()
+        await logEdit({ user, tableLabel: '経費', action: '追加', summary: `CSVインポートで${toInsert.length}件を追加` })
+      }
+      setImportResult({ ok: toInsert.length, errors })
+    } catch (e) {
+      setImportResult({ ok: 0, errors: ['インポートに失敗しました: ' + e.message] })
+    } finally {
+      setImporting(false)
+    }
   }
 
   const submit = async () => {
@@ -1064,12 +1245,30 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
         <button className="btn-secondary" onClick={exportCsv}>CSVダウンロード</button>
         {canEdit && (
           <>
+            <button className="btn-secondary" onClick={openImport} disabled={importing}>{importing ? 'インポート中...' : 'CSVインポート'}</button>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
             <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
             <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
           </>
         )}
       </div>
-      <div className="mini" style={{ marginBottom: 8, color: '#54614f' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
+      {importResult && (
+        <div className="mini" style={{ marginBottom: 8, color: importResult.errors.length ? '#a11615' : '#6b6167' }}>
+          {importResult.ok > 0 && <div>{importResult.ok}件を追加しました。</div>}
+          {importResult.errors.length > 0 && (
+            <div>
+              {importResult.errors.length}件のエラー:
+              <ul style={{ margin: '4px 0 0 18px' }}>
+                {importResult.errors.slice(0, 20).map((msg, i) => <li key={i}>{msg}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
+      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
+        CSVインポートは「CSVダウンロード」した形式(日付・物件・号室・カテゴリ・内容・支払先・金額)のまま、行を追加・編集して読み込んでください。物件・号室・カテゴリは既存の表記と完全一致している必要があります。
+      </div>
 
       <table className="master-table">
         <thead>
