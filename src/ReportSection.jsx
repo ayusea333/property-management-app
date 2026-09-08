@@ -20,10 +20,25 @@ function periodYearOptions() {
 
 export default function ReportSection({ sales, expenses }) {
   const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
 
   const report = computeFiscalReport(periodYear, sales, expenses)
   const prevReport = computeFiscalReport(periodYear - 1, sales, expenses)
   const yoy = computeYoy(report, prevReport)
+
+  const handleExport = async () => {
+    setExporting(true)
+    setExportError('')
+    try {
+      await exportFiscalReportXlsx(report, yoy)
+    } catch (err) {
+      setExportError('Excelの作成に失敗しました。もう一度お試しください。')
+      console.error(err)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <div>
@@ -34,13 +49,14 @@ export default function ReportSection({ sales, expenses }) {
             <option key={y} value={y}>{fiscalPeriodFullLabel(y)}</option>
           ))}
         </select>
-        <button className="btn-primary" onClick={() => exportFiscalReportXlsx(report, yoy)}>
-          Excelでダウンロード
+        <button className="btn-primary" onClick={handleExport} disabled={exporting}>
+          {exporting ? '作成中...' : 'Excelでダウンロード'}
         </button>
+        {exportError && <span className="form-error" style={{ marginBottom: 0 }}>{exportError}</span>}
       </div>
 
       {!report.hasData && (
-        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
           この期にはまだ売上・経費のデータがありません。
         </div>
       )}
@@ -83,7 +99,7 @@ export default function ReportSection({ sales, expenses }) {
         </tbody>
       </table>
 
-      <p className="mini" style={{ marginTop: 12, color: '#54614f' }}>
+      <p className="mini" style={{ marginTop: 12, color: '#6b6167' }}>
         「Excelでダウンロード」を押すと、月別・項目別の内訳や前期比較まで含めたExcelファイル(.xlsx)がダウンロードされます。
         前期比較は、前期(前の期)のデータがこのアプリ内に入力されている場合のみ計算されます。
       </p>
