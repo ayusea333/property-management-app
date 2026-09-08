@@ -31,7 +31,7 @@ export default function EditHistory() {
 
   return (
     <div>
-      <p className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+      <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
         直近500件の変更を新しい順に表示しています。
       </p>
       <div className="tablewrap">
