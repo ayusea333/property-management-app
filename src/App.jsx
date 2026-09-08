@@ -25,8 +25,8 @@ import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
 import Backups from './Backups'
 import ReportSection from './ReportSection'
+import logoUrl from './assets/logo.png'
 import './App.css'
-
 // ---- マスタ種別ごとの設定 ----
 // fields: 一覧・フォームに表示する項目
 // relation: 他のマスタに紐づく場合の設定(親を選ぶセレクトボックスを出す)
@@ -1230,6 +1230,7 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-header">
+          <img src={logoUrl} alt="3L AGENCY" className="sidebar-logo" />
           <h1>建物管理台帳</h1>
         </div>
 
