@@ -10,10 +10,11 @@ html, body, #root {
   --brand-red: #cc1d1c;
   --brand-red-dark: #a11615;
   --brand-purple: #993887;
+  --brand-purple-dark: #7a2c69;
   --brand-gold: #e8ca2d;
 
-  --brand-primary: var(--brand-red);
-  --brand-primary-dark: var(--brand-red-dark);
+  --brand-primary: var(--brand-purple);
+  --brand-primary-dark: var(--brand-purple-dark);
   --brand-secondary: var(--brand-purple);
   --brand-danger: var(--brand-red);
   --brand-accent: var(--brand-gold);
