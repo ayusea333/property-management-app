@@ -3,13 +3,14 @@ import { SALES_CATEGORIES } from './lib/sales'
 import { fiscalYearLabel, fiscalMonths, fiscalHalves, currentFiscalStartYear } from './lib/period'
 import { currentMonthStr } from './lib/rentPayments'
 
-// dataviz skillの検証済みパレット(8色・固定順)
+// dataviz skillの検証済みパレット(9色・固定順、SALES_CATEGORIESの並びと対応)
 const CATEGORY_COLORS = [
   '#2a78d6', // 管理料
   '#eb6834', // ビルメンテナンス
   '#1baf7a', // 請負工事
   '#eda100', // 借上げ
   '#e87ba4', // 所有物件
+  '#993887', // レントスペース(ブランドパープル)
   '#008300', // AD・付帯・契約手数料
   '#4a3aa7', // 安サポ
   '#e34948', // その他手数料等
