@@ -144,6 +144,20 @@ function styleHeaderRow(row, color) {
   row.height = 20
 }
 
+// 黒背景を使わず、白地+赤文字+赤罫線で見出し行を強調する(ロゴ等の視認性に配慮)
+function styleHeaderRowLight(row) {
+  row.eachCell((cell) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND.white } }
+    cell.font = { bold: true, color: { argb: BRAND.red } }
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    cell.border = {
+      top: { style: 'medium', color: { argb: BRAND.red } },
+      bottom: { style: 'medium', color: { argb: BRAND.red } },
+    }
+  })
+  row.height = 20
+}
+
 function applyPrintSetup(ws) {
   ws.pageSetup = {
     ...ws.pageSetup,
@@ -232,7 +246,7 @@ export async function exportFiscalReportXlsx(report, yoy) {
 
   ws1.addRow([])
   const kpiHeader = ws1.addRow(['総売上(税込)', '年間経費', '粗利', '粗利率', yoy ? '前期比' : ''])
-  styleHeaderRow(kpiHeader, BRAND.black)
+  styleHeaderRowLight(kpiHeader)
   const kpiRow = ws1.addRow([
     report.totalSales,
     report.totalExpenses,
@@ -270,9 +284,9 @@ export async function exportFiscalReportXlsx(report, yoy) {
   }
 
   const sectionRow = ws1.addRow(['項目別売上構成'])
-  sectionRow.getCell(1).font = { bold: true, size: 13, color: { argb: BRAND.purple } }
+  sectionRow.getCell(1).font = { bold: true, size: 13, color: { argb: BRAND.red } }
   const catHeader = ws1.addRow(['項目', '年間売上', '年間経費', '粗利', '構成比'])
-  styleHeaderRow(catHeader, BRAND.purple)
+  styleHeaderRow(catHeader, BRAND.red)
   report.byCategory.forEach((r, idx) => {
     const row = ws1.addRow([r.category, r.salesTotal, r.expenseTotal, r.profit, r.ratio])
     styleDataRow(row, { zebra: idx % 2 === 1 })
@@ -329,7 +343,7 @@ export async function exportFiscalReportXlsx(report, yoy) {
   const ws5 = wb.addWorksheet('月別損益')
   titleBanner(ws5, 4, '月別 売上・経費・粗利(全体)')
   const overallHeader = ws5.addRow(['月', '売上', '経費', '粗利'])
-  styleHeaderRow(overallHeader, BRAND.black)
+  styleHeaderRowLight(overallHeader)
   report.months.forEach((m, idx) => {
     const row = ws5.addRow([monthLabel(m), report.totalSalesByMonth[m], report.totalExpensesByMonth[m], report.totalProfitByMonth[m]])
     styleDataRow(row, { zebra: idx % 2 === 1 })
@@ -372,7 +386,7 @@ export async function exportFiscalReportXlsx(report, yoy) {
     const ws6 = wb.addWorksheet('前年比較')
     titleBanner(ws6, 4, '前期との比較')
     const yoyHeader = ws6.addRow(['比較項目', '今期', '前期', '差額'])
-    styleHeaderRow(yoyHeader, BRAND.purple)
+    styleHeaderRow(yoyHeader, BRAND.red)
     const salesDiffRow = ws6.addRow(['総売上', report.totalSales, yoy.prevTotalSales, yoy.diff])
     styleDataRow(salesDiffRow)
     const profitDiffRow = ws6.addRow(['粗利', report.grossProfit, yoy.prevGrossProfit, report.grossProfit - yoy.prevGrossProfit])
