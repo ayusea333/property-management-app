@@ -1010,7 +1010,6 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
         <thead>
           <tr><th></th><th>日付</th><th>カテゴリ</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th></th></tr>
         </thead>
-        </thead>
         <tbody>
           {filtered.map((s) => (
             <tr key={s.id}>
