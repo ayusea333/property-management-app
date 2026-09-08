@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabase'
 import { translateAuthError } from './lib/editLog'
+import logoUrl from './assets/logo.png'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -22,6 +23,7 @@ export default function Login() {
   return (
     <div className="login-shell">
       <form className="login-box" onSubmit={submit}>
+        <img src={logoUrl} alt="3L AGENCY" className="login-logo" />
         <h1>建物管理台帳</h1>
         <p className="app-sub">ログインしてください</p>
         <div className="form-row">
@@ -48,7 +50,7 @@ export default function Login() {
         <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
           {loading ? 'ログイン中...' : 'ログイン'}
         </button>
-        <p className="mini" style={{ marginTop: 16, color: '#54614f' }}>
+        <p className="mini" style={{ marginTop: 16, color: '#6b6167' }}>
           アカウントをお持ちでない場合は、責任者にお問い合わせください。
         </p>
       </form>
