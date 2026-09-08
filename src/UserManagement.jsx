@@ -57,12 +57,12 @@ export default function UserManagement({ myProfile }) {
 
   return (
     <div>
-      <p className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+      <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
         新しいアカウントの発行は、Supabaseの管理画面(Authentication → Users)から行ってください。
         ここでは発行済みのアカウントに、どのタブを編集できるかを設定します。「管理者」にチェックを入れると、そのアカウントは全タブ編集可能・この管理者メニューも使えるようになります。
         「無効化」にチェックを入れると、そのアカウントはすぐにログインできなくなります(データやアカウント自体は消えません。チェックを外せば元に戻せます)。
       </p>
-      <p className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+      <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
         アカウントを完全に削除したい場合(二度と使えないようにする場合)は、
         <a href="https://supabase.com/dashboard/project/lrxnwogkkfwjozsncfod/auth/users" target="_blank" rel="noreferrer"> Supabaseの管理画面(Authentication → Users)</a>
         から削除してください。
@@ -86,7 +86,7 @@ export default function UserManagement({ myProfile }) {
                     defaultValue={p.display_name || ''}
                     placeholder="(未設定)"
                     onBlur={(e) => updateName(p.id, e.target.value)}
-                    style={{ width: 120, padding: '4px 6px', border: '1px solid #bfceb8', borderRadius: 4 }}
+                    style={{ width: 120, padding: '4px 6px', border: '1px solid #cdbfc6', borderRadius: 4 }}
                   />
                 </td>
                 <td>{p.email}{p.id === myProfile?.id && <span className="mini"> (自分)</span>}</td>
