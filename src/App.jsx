@@ -1004,9 +1004,10 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
         CSVインポートは「CSVダウンロード」した形式(日付・カテゴリ・物件・号室・オーナー・内容・金額)のまま、行を追加・編集して読み込んでください。カテゴリ・物件・号室は既存の表記と完全一致している必要があります。
-      </div>
+          </div>
 
-             <thead>
+      <table className="master-table">
+        <thead>
           <tr><th></th><th>日付</th><th>カテゴリ</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th></th></tr>
         </thead>
         <tbody>
