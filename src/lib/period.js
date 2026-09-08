@@ -12,6 +12,18 @@ export function fiscalYearLabel(startYear) {
   return `${startYear}/9 〜 ${startYear + 1}/8`
 }
 
+// 期(第◯期)の番号。2025年9月〜2026年8月分が「第11期」であることを基準に計算
+const FISCAL_PERIOD_BASE_START_YEAR = 2025
+const FISCAL_PERIOD_BASE_NUMBER = 11
+
+export function fiscalPeriodNumber(startYear) {
+  return startYear - FISCAL_PERIOD_BASE_START_YEAR + FISCAL_PERIOD_BASE_NUMBER
+}
+
+export function fiscalPeriodFullLabel(startYear) {
+  return `第${fiscalPeriodNumber(startYear)}期(${fiscalYearLabel(startYear)})`
+}
+
 // 指定した期の12か月分('YYYY-MM')を返す
 export function fiscalMonths(startYear) {
   const arr = []
