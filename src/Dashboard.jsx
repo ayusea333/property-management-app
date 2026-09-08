@@ -15,7 +15,7 @@ const CATEGORY_COLORS = [
   '#4a3aa7', // 安サポ
   '#e34948', // その他手数料等
 ]
-const BAR_COLOR = '#2a78d6'
+const BAR_COLOR = '#CC1D1C' // ブランドレッド
 
 function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
