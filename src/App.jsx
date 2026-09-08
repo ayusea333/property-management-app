@@ -1169,4 +1169,177 @@ export default function App() {
       const results = {}
       for (const key of TABS) {
         const config = MASTER_CONFIGS[key]
-        const { data,
+        const { data, error } = await supabase.from(config.table).select('*').order('created_at')
+        if (error) throw error
+        results[key] = (data || []).map(config.fromRow)
+      }
+      setAllRecords(results)
+
+      const { data: rpData, error: rpError } = await supabase.from('rent_payments').select('*')
+      if (rpError) throw rpError
+      setRentPayments((rpData || []).map(rentPaymentFromRow))
+
+      const { data: saleData, error: saleError } = await supabase.from('sales').select('*')
+      if (saleError) throw saleError
+      setSales((saleData || []).map(saleFromRow))
+
+      const { data: expData, error: expError } = await supabase.from('expenses').select('*')
+      if (expError) throw expError
+      setExpenses((expData || []).map(expenseFromRow))
+    } catch (e) {
+      setLoadError('データの読み込みに失敗しました: ' + e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (session?.user) {
+      setLoading(true)
+      loadAll()
+    }
+  }, [session])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+  }
+
+  if (authLoading) {
+    return <div className="app-shell"><p style={{ padding: 24 }}>読み込み中...</p></div>
+  }
+
+  if (disabledNotice) {
+    return (
+      <div className="login-shell">
+        <div className="login-box">
+          <h1>建物管理台帳</h1>
+          <p className="form-error" style={{ marginTop: 16 }}>{disabledNotice}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <Login />
+  }
+
+  const canEdit = (key) => !!profile?.is_admin || !!profile?.[PERM_FIELD_MAP[key]]
+  const topTabs = profile?.is_admin ? [...BASE_TOP_TABS, ADMIN_TAB] : BASE_TOP_TABS
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <h1>建物管理台帳</h1>
+        </div>
+
+        <nav className="sidebar-nav">
+          {topTabs.map((t) => (
+            <button
+              key={t.key}
+              className={topTab === t.key ? 'sidebar-btn active' : 'sidebar-btn'}
+              onClick={() => setTopTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        {topTab === 'master' && (
+          <nav className="sidebar-subnav">
+            <div className="sidebar-subnav-label">マスタ種別</div>
+            {TABS.map((key) => (
+              <button
+                key={key}
+                className={activeTab === key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                onClick={() => setActiveTab(key)}
+              >
+                {MASTER_CONFIGS[key].label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {topTab === 'admin' && (
+          <nav className="sidebar-subnav">
+            <div className="sidebar-subnav-label">管理者メニュー</div>
+            {ADMIN_SUB_TABS.map((t) => (
+              <button
+                key={t.key}
+                className={adminTab === t.key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                onClick={() => setAdminTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        <div className="sidebar-footer">
+          <div className="sidebar-user">{profile?.display_name || session.user.email}</div>
+          <button className="sidebar-btn" onClick={handleLogout}>ログアウト</button>
+        </div>
+      </aside>
+
+      <div className="main-area">
+        <header className="main-header">
+          <h2>{topTabs.find((t) => t.key === topTab)?.label}</h2>
+        </header>
+
+        <main className="app-main">
+          {loading && <p>読み込み中...</p>}
+          {loadError && <p className="form-error">{loadError}</p>}
+          {!loading && !loadError && topTab === 'master' && (
+            <MasterSection
+              masterKey={activeTab}
+              allRecords={allRecords}
+              onChanged={loadAll}
+              canEdit={canEdit('master')}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'rentPayments' && (
+            <RentPaymentsSection
+              allRecords={allRecords}
+              rentPayments={rentPayments}
+              onChanged={loadAll}
+              canEdit={canEdit('rentPayments')}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'sales' && (
+            <SalesSection
+              allRecords={allRecords}
+              sales={sales}
+              onChanged={loadAll}
+              canEdit={canEdit('sales')}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'expenses' && (
+            <ExpensesSection
+              allRecords={allRecords}
+              expenses={expenses}
+              onChanged={loadAll}
+              canEdit={canEdit('expenses')}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && (
+            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} />
+          )}
+          {!loading && !loadError && topTab === 'report' && (
+            <ReportSection sales={sales} expenses={expenses} />
+          )}
+          {topTab === 'admin' && profile?.is_admin && (
+            <>
+              {adminTab === 'users' && <UserManagement myProfile={profile} />}
+              {adminTab === 'history' && <EditHistory />}
+              {adminTab === 'backups' && <Backups onRestored={loadAll} />}
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  )
+}
