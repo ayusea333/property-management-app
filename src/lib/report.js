@@ -371,8 +371,8 @@ export async function exportFiscalReportXlsx(report, yoy) {
   if (yoy) {
     const ws6 = wb.addWorksheet('前年比較')
     titleBanner(ws6, 4, '前期との比較')
-    const yoyHeader = ws6.addRow(['比較項目', '今期', '前期', '差額'])
-    styleHeaderRow(yoyHeader, BRAND.purple)
+     const overallHeader = ws5.addRow(['月', '売上', '経費', '粗利'])
+  styleHeaderRow(overallHeader, BRAND.purple)
     const salesDiffRow = ws6.addRow(['総売上', report.totalSales, yoy.prevTotalSales, yoy.diff])
     styleDataRow(salesDiffRow)
     const profitDiffRow = ws6.addRow(['粗利', report.grossProfit, yoy.prevGrossProfit, report.grossProfit - yoy.prevGrossProfit])
