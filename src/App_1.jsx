@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment, useRef } from 'react'
+import { useEffect, useState, Fragment, useRef, useId } from 'react'
 import { supabase } from './lib/supabase'
 import {
   ownerFromRow, ownerToRow,
@@ -143,6 +143,48 @@ function recordLabel(record) {
   return record?.name || record?.roomNumber || ''
 }
 
+// プルダウンと検索(入力しながら絞り込み)の両方が使えるセレクト。
+// options: [{ id, label }] の配列。候補と完全に一致する文字が入力された時だけ選択が確定する。
+function SearchableSelect({ value, onChange, options, placeholder }) {
+  const listId = useId()
+  const [text, setText] = useState(() => options.find((o) => o.id === value)?.label || '')
+
+  useEffect(() => {
+    setText(options.find((o) => o.id === value)?.label || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  const handleChange = (e) => {
+    const t = e.target.value
+    setText(t)
+    if (t === '') { onChange(''); return }
+    const match = options.find((o) => o.label === t)
+    if (match) onChange(match.id)
+  }
+
+  const handleBlur = () => {
+    if (!options.find((o) => o.label === text)) {
+      setText(options.find((o) => o.id === value)?.label || '')
+    }
+  }
+
+  return (
+    <>
+      <input
+        list={listId}
+        value={text}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        placeholder={placeholder || '入力して検索、またはプルダウンから選択'}
+        autoComplete="off"
+      />
+      <datalist id={listId}>
+        {options.map((o) => <option key={o.id} value={o.label} />)}
+      </datalist>
+    </>
+  )
+}
+
 function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
   const config = MASTER_CONFIGS[masterKey]
   const records = allRecords[masterKey] || []
@@ -284,15 +326,11 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
             <div className="form-row" key={field.key}>
               <label>{field.label}{field.required && <span className="required">*</span>}</label>
               {field.relation ? (
-                <select
+                <SearchableSelect
                   value={form[field.key] || ''}
-                  onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-                >
-                  <option value="">選択してください</option>
-                  {relationOptions(field.relation).map((opt) => (
-                    <option key={opt.id} value={opt.id}>{opt.name || opt.roomNumber}</option>
-                  ))}
-                </select>
+                  onChange={(id) => setForm({ ...form, [field.key]: id })}
+                  options={relationOptions(field.relation).map((opt) => ({ id: opt.id, label: opt.name || opt.roomNumber }))}
+                />
               ) : field.options ? (
                 <select
                   value={form[field.key] || ''}
@@ -931,18 +969,20 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
           <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
             <label>物件</label>
-            <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
-              <option value="">(なし)</option>
-              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={form.propertyId}
+              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
+              options={properties.map((p) => ({ id: p.id, label: p.name }))}
+            />
           </div>
           {form.propertyId && (
             <div className="form-row">
               <label>号室</label>
-              <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
-                <option value="">(なし)</option>
-                {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
-              </select>
+              <SearchableSelect
+                value={form.roomId}
+                onChange={(id) => setForm({ ...form, roomId: id })}
+                options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
+              />
             </div>
           )}
           <div className="form-row">
@@ -1206,18 +1246,20 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
           <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
             <label>物件</label>
-            <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
-              <option value="">(なし)</option>
-              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={form.propertyId}
+              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
+              options={properties.map((p) => ({ id: p.id, label: p.name }))}
+            />
           </div>
           {form.propertyId && (
             <div className="form-row">
               <label>号室</label>
-              <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
-                <option value="">(なし)</option>
-                {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
-              </select>
+              <SearchableSelect
+                value={form.roomId}
+                onChange={(id) => setForm({ ...form, roomId: id })}
+                options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
+              />
             </div>
           )}
           <div className="form-row">
