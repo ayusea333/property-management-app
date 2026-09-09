@@ -7,12 +7,13 @@ import {
   tenantFromRow, tenantToRow,
   clientFromRow, clientToRow,
   vendorFromRow, vendorToRow,
+  feeItemFromRow, feeItemToRow,
 } from './lib/masters'
 import {
   rentPaymentFromRow, rentPaymentToRow,
   currentMonthStr, prevMonthStr, formatMonthLabel,
 } from './lib/rentPayments'
-import { SALES_CATEGORIES, TAX_TYPES, saleFromRow, saleToRow } from './lib/sales'
+import { SALES_CATEGORIES, TAX_TYPES, saleFromRow, saleToRow, taxBreakdown } from './lib/sales'
 import { expenseFromRow, expenseToRow } from './lib/expenses'
 import {
   fiscalYearLabel, fiscalMonths, currentFiscalStartYear,
@@ -71,11 +72,7 @@ const MASTER_CONFIGS = {
       { key: 'propertyId', label: '物件', relation: 'properties', required: true },
       { key: 'rent', label: '賃料', type: 'number' },
       { key: 'commonFee', label: '共益費', type: 'number' },
-      { key: 'parkingFee', label: '駐車場代', type: 'number' },
-      { key: 'bicycleFee', label: '駐輪場代', type: 'number' },
-      { key: 'supportFee', label: '安サポ', type: 'number' },
-      { key: 'supportFeeType', label: '安サポの支払い', options: ['月払い', '年払い'] },
-      { key: 'otherFee', label: 'その他費用', type: 'number' },
+      { key: 'extraFees', label: '費用項目', dynamicFees: true },
       { key: 'managementFee', label: '管理料(月額)', type: 'number' },
       { key: 'note', label: '備考', textarea: true },
     ],
@@ -129,16 +126,25 @@ const MASTER_CONFIGS = {
       { key: 'note', label: '備考', textarea: true },
     ],
   },
+  feeItems: {
+    label: '費用項目',
+    table: 'fee_items',
+    fromRow: feeItemFromRow,
+    toRow: feeItemToRow,
+    fields: [
+      { key: 'name', label: '項目名', required: true },
+    ],
+  },
 }
 
-const TABS = ['owners', 'properties', 'rooms', 'tenants', 'clients', 'vendors']
+const TABS = ['owners', 'properties', 'rooms', 'feeItems', 'tenants', 'clients', 'vendors']
 
 const PAYMENT_METHODS = ['振込', '現金', 'クレジットカード', '口座振替', 'その他']
 
 function emptyForm(fields) {
   const f = {}
   fields.forEach((field) => {
-    f[field.key] = field.type === 'number' ? 0 : field.type === 'checkbox' ? false : ''
+    f[field.key] = field.dynamicFees ? {} : field.type === 'number' ? 0 : field.type === 'checkbox' ? false : ''
   })
   return f
 }
@@ -248,6 +254,10 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
         setError(`「${field.label}」にマイナスの金額は入力できません`)
         return
       }
+      if (field.dynamicFees && Object.values(form[field.key] || {}).some((e) => Number(e.amount) < 0)) {
+        setError(`「${field.label}」にマイナスの金額は入力できません`)
+        return
+      }
     }
     if (masterKey === 'tenants' && form.moveInDate && form.moveOutDate && form.moveOutDate < form.moveInDate) {
       setError('「退去日」が「入居日」より前になっています')
@@ -298,6 +308,10 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
     return found.name || found.roomNumber || ''
   }
 
+  const feeItemOptions = allRecords.feeItems || []
+  const listFields = config.fields.filter((f) => !f.textarea && !f.hideInList)
+  const columnCount = listFields.reduce((n, f) => n + (f.dynamicFees ? Math.max(feeItemOptions.length, 1) : 1), 0) + (canEdit ? 1 : 0)
+
   return (
     <div className="master-section">
       <div className="master-toolbar">
@@ -329,7 +343,42 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
           {config.fields.map((field) => (
             <div className="form-row" key={field.key}>
               <label>{field.label}{field.required && <span className="required">*</span>}</label>
-              {field.relation ? (
+              {field.dynamicFees ? (
+                <div>
+                  {feeItemOptions.length === 0 && (
+                    <div className="mini" style={{ color: '#6b6167' }}>
+                      費用項目がまだ登録されていません。先に「費用項目」タブで項目を追加してください。
+                    </div>
+                  )}
+                  {feeItemOptions.map((item) => {
+                    const entry = form[field.key]?.[item.id] || { amount: 0, billingType: '月払い' }
+                    return (
+                      <div key={item.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ minWidth: 100 }}>{item.name}</span>
+                        <input
+                          type="number"
+                          value={entry.amount}
+                          onChange={(e) => setForm({
+                            ...form,
+                            [field.key]: { ...form[field.key], [item.id]: { ...entry, amount: Number(e.target.value) } },
+                          })}
+                          style={{ width: 120 }}
+                        />
+                        <select
+                          value={entry.billingType || '月払い'}
+                          onChange={(e) => setForm({
+                            ...form,
+                            [field.key]: { ...form[field.key], [item.id]: { ...entry, billingType: e.target.value } },
+                          })}
+                        >
+                          <option value="月払い">月払い</option>
+                          <option value="年払い">年払い</option>
+                        </select>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : field.relation ? (
                 <SearchableSelect
                   value={form[field.key] || ''}
                   onChange={(id) => setForm({ ...form, [field.key]: id })}
@@ -378,24 +427,39 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
       <table className="master-table">
         <thead>
           <tr>
-            {config.fields.filter((f) => !f.textarea && !f.hideInList).map((f) => (
-              <th key={f.key}>{f.label}</th>
-            ))}
+            {listFields.flatMap((f) =>
+              f.dynamicFees
+                ? feeItemOptions.map((item) => <th key={`${f.key}-${item.id}`} className="amount">{item.name}</th>)
+                : [<th key={f.key}>{f.label}</th>]
+            )}
             {canEdit && <th className="col-actions"></th>}
           </tr>
         </thead>
         <tbody>
           {filtered.map((record) => (
             <tr key={record.id}>
-              {config.fields.filter((f) => !f.textarea && !f.hideInList).map((f) => (
-                <td key={f.key}>
-                  {f.relation
-                    ? relationLabel(f.relation, record[f.key])
-                    : f.type === 'checkbox'
-                    ? (record[f.key] ? '○' : '')
-                    : String(record[f.key] ?? '')}
-                </td>
-              ))}
+              {listFields.flatMap((f) =>
+                f.dynamicFees
+                  ? feeItemOptions.map((item) => {
+                      const entry = record[f.key]?.[item.id]
+                      return (
+                        <td key={`${f.key}-${item.id}`} className="amount">
+                          {entry && entry.amount
+                            ? (entry.billingType === '年払い' ? <span className="mini">{yen(entry.amount)}(年払い)</span> : yen(entry.amount))
+                            : ''}
+                        </td>
+                      )
+                    })
+                  : [
+                      <td key={f.key}>
+                        {f.relation
+                          ? relationLabel(f.relation, record[f.key])
+                          : f.type === 'checkbox'
+                          ? (record[f.key] ? '○' : '')
+                          : String(record[f.key] ?? '')}
+                      </td>,
+                    ]
+              )}
               {canEdit && (
                 <td className="col-actions">
                   <button className="icon-btn" title="編集" onClick={() => startEdit(record)}>✎</button>
@@ -405,7 +469,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
             </tr>
           ))}
           {filtered.length === 0 && (
-            <tr><td colSpan={config.fields.length + 1} className="empty-row">データがありません</td></tr>
+            <tr><td colSpan={columnCount} className="empty-row">データがありません</td></tr>
           )}
         </tbody>
       </table>
@@ -414,6 +478,12 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
 }
 
 // ---- 家賃入金・滞納確認 ----
+
+// 部屋の費用項目(extraFees)のうち、月払いのものだけ合計する。年払いのものは毎月の家賃合計には含めない。
+function extraFeesMonthlyTotal(room) {
+  const fees = room?.extraFees || {}
+  return Object.values(fees).reduce((sum, f) => sum + (f?.billingType === '年払い' ? 0 : (Number(f?.amount) || 0)), 0)
+}
 
 function activeTenantsFor(allRecords, targetMonth) {
   const tenants = allRecords.tenants || []
@@ -430,16 +500,12 @@ function activeTenantsFor(allRecords, targetMonth) {
       const owner = property ? owners.find((o) => o.id === property.ownerId) : null
       const rent = room?.rent || 0
       const commonFee = room?.commonFee || 0
-      const parkingFee = room?.parkingFee || 0
-      const bicycleFee = room?.bicycleFee || 0
-      // 安サポが年払いの部屋は、毎月の家賃合計には含めない
-      const supportFee = room?.supportFeeType === '年払い' ? 0 : (room?.supportFee || 0)
-      const otherFee = room?.otherFee || 0
+      const extraFeesTotal = extraFeesMonthlyTotal(room)
       return {
         tenant: t,
         room, property, owner,
-        rent, commonFee, parkingFee, bicycleFee, supportFee, otherFee,
-        total: rent + commonFee + parkingFee + bicycleFee + supportFee + otherFee,
+        rent, commonFee, extraFeesTotal,
+        total: rent + commonFee + extraFeesTotal,
       }
     })
 }
@@ -462,6 +528,8 @@ function yen(n) {
 }
 
 function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, user }) {
+  const feeItems = allRecords.feeItems || []
+  const rentTableColumnCount = 12 + feeItems.length
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -642,10 +710,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
             <th>契約者</th>
             <th className="amount">家賃</th>
             <th className="amount">共益費</th>
-            <th className="amount">駐車場</th>
-            <th className="amount">駐輪場</th>
-            <th className="amount">安サポ</th>
-            <th className="amount">その他</th>
+            {feeItems.map((item) => <th key={item.id} className="amount">{item.name}</th>)}
             <th className="amount">合計</th>
             <th>保証会社</th>
             <th>口振</th>
@@ -674,14 +739,16 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
                 <td>{row.tenant.name}</td>
                 <td className="amount">{yen(row.rent)}</td>
                 <td className="amount">{yen(row.commonFee)}</td>
-                <td className="amount">{yen(row.parkingFee)}</td>
-                <td className="amount">{yen(row.bicycleFee)}</td>
-                <td className="amount">
-                  {row.room?.supportFeeType === '年払い'
-                    ? <span className="mini">年払い({yen(row.room.supportFee)})</span>
-                    : yen(row.supportFee)}
-                </td>
-                <td className="amount">{yen(row.otherFee)}</td>
+                {feeItems.map((item) => {
+                  const entry = row.room?.extraFees?.[item.id]
+                  return (
+                    <td key={item.id} className="amount">
+                      {entry && entry.amount
+                        ? (entry.billingType === '年払い' ? <span className="mini">年払い({yen(entry.amount)})</span> : yen(entry.amount))
+                        : ''}
+                    </td>
+                  )
+                })}
                 <td className="amount">{yen(row.total)}</td>
                 <td>{row.tenant.guarantor}</td>
                 <td className="center">{row.tenant.debit ? '○' : ''}</td>
@@ -695,7 +762,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
               </tr>
               {payForm && payForm.tenantId === row.tenant.id && (
                 <tr>
-                  <td colSpan={16} style={{ background: '#f8f6f3' }}>
+                  <td colSpan={rentTableColumnCount} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.tenant.name}様 {formatMonthLabel(targetMonth)}分の入金を記録</h3>
                       <div className="form-row">
@@ -721,7 +788,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
             </Fragment>
           ))}
           {filtered.length === 0 && (
-            <tr><td colSpan={16} className="empty-row">対象の契約がありません</td></tr>
+            <tr><td colSpan={rentTableColumnCount} className="empty-row">対象の契約がありません</td></tr>
           )}
         </tbody>
       </table>
@@ -1084,23 +1151,28 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
 
       <table className="master-table">
         <thead>
-          <tr><th></th><th>日付</th><th>カテゴリ</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th></th></tr>
+          <tr><th></th><th>日付</th><th>カテゴリ</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
         </thead>
         <tbody>
-          {filtered.map((s) => (
-            <tr key={s.id}>
-              <td>{canEdit && <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSelect(s.id)} />}</td>
-              <td>{s.date}</td>
-              <td>{s.category}{s.source !== 'manual' && <span className="mini"> (自動)</span>}</td>
-              <td>{propertyName(s.propertyId)}</td>
-              <td>{roomLabel(s.roomId)}</td>
-              <td>{ownerName(s.ownerId)}</td>
-              <td>{s.content}</td>
-              <td className="amount">{s.amount.toLocaleString()}</td>
-              <td>{canEdit && s.source === 'manual' && <button className="icon-btn" onClick={() => deleteSale(s)}>🗑</button>}</td>
-            </tr>
-          ))}
-          {filtered.length === 0 && <tr><td colSpan={9} className="empty-row">データがありません</td></tr>}
+          {filtered.map((s) => {
+            const { exTax, tax } = taxBreakdown(s.amount, s.taxType)
+            return (
+              <tr key={s.id}>
+                <td>{canEdit && <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSelect(s.id)} />}</td>
+                <td>{s.date}</td>
+                <td>{s.category}{s.source !== 'manual' && <span className="mini"> (自動)</span>}</td>
+                <td>{propertyName(s.propertyId)}</td>
+                <td>{roomLabel(s.roomId)}</td>
+                <td>{ownerName(s.ownerId)}</td>
+                <td>{s.content}</td>
+                <td className="amount">{s.amount.toLocaleString()}</td>
+                <td className="amount">{exTax.toLocaleString()}</td>
+                <td className="amount">{tax.toLocaleString()}</td>
+                <td>{canEdit && s.source === 'manual' && <button className="icon-btn" onClick={() => deleteSale(s)}>🗑</button>}</td>
+              </tr>
+            )
+          })}
+          {filtered.length === 0 && <tr><td colSpan={11} className="empty-row">データがありません</td></tr>}
         </tbody>
       </table>
     </div>
@@ -1417,23 +1489,28 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
 
       <table className="master-table">
         <thead>
-          <tr><th></th><th>日付</th><th>物件</th><th>号室</th><th>カテゴリ</th><th>内容</th><th>支払先</th><th className="amount">金額</th><th></th></tr>
+          <tr><th></th><th>日付</th><th>物件</th><th>号室</th><th>カテゴリ</th><th>内容</th><th>支払先</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
         </thead>
         <tbody>
-          {filtered.map((e) => (
-            <tr key={e.id}>
-              <td>{canEdit && <input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggleSelect(e.id)} />}</td>
-              <td>{e.date}</td>
-              <td>{propertyName(e.propertyId)}</td>
-              <td>{roomLabel(e.roomId)}</td>
-              <td>{e.category}</td>
-              <td>{e.content}</td>
-              <td>{e.payee}</td>
-              <td className="amount">{e.amount.toLocaleString()}</td>
-              <td>{canEdit && <button className="icon-btn" onClick={() => deleteExpense(e)}>🗑</button>}</td>
-            </tr>
-          ))}
-          {filtered.length === 0 && <tr><td colSpan={9} className="empty-row">データがありません</td></tr>}
+          {filtered.map((e) => {
+            const { exTax, tax } = taxBreakdown(e.amount, e.taxType)
+            return (
+              <tr key={e.id}>
+                <td>{canEdit && <input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggleSelect(e.id)} />}</td>
+                <td>{e.date}</td>
+                <td>{propertyName(e.propertyId)}</td>
+                <td>{roomLabel(e.roomId)}</td>
+                <td>{e.category}</td>
+                <td>{e.content}</td>
+                <td>{e.payee}</td>
+                <td className="amount">{e.amount.toLocaleString()}</td>
+                <td className="amount">{exTax.toLocaleString()}</td>
+                <td className="amount">{tax.toLocaleString()}</td>
+                <td>{canEdit && <button className="icon-btn" onClick={() => deleteExpense(e)}>🗑</button>}</td>
+              </tr>
+            )
+          })}
+          {filtered.length === 0 && <tr><td colSpan={11} className="empty-row">データがありません</td></tr>}
         </tbody>
       </table>
     </div>

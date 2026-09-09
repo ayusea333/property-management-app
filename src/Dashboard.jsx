@@ -148,6 +148,12 @@ function BarChart({ data }) {
   )
 }
 
+// 部屋の費用項目(extraFees)のうち、月払いのものだけ合計する。年払いのものは毎月の家賃合計には含めない。
+function extraFeesMonthlyTotal(room) {
+  const fees = room?.extraFees || {}
+  return Object.values(fees).reduce((sum, f) => sum + (f?.billingType === '年払い' ? 0 : (Number(f?.amount) || 0)), 0)
+}
+
 function activeContractsFor(allRecords, month) {
   const tenants = allRecords.tenants || []
   const rooms = allRecords.rooms || []
@@ -161,9 +167,7 @@ function activeContractsFor(allRecords, month) {
       const room = rooms.find((r) => r.id === t.roomId)
       const property = room ? properties.find((p) => p.id === room.propertyId) : null
       const owner = property ? owners.find((o) => o.id === property.ownerId) : null
-      const supportFee = room?.supportFeeType === '年払い' ? 0 : (room?.supportFee || 0)
-      const total = (room?.rent || 0) + (room?.commonFee || 0) + (room?.parkingFee || 0)
-        + (room?.bicycleFee || 0) + supportFee + (room?.otherFee || 0)
+      const total = (room?.rent || 0) + (room?.commonFee || 0) + extraFeesMonthlyTotal(room)
       return { tenant: t, room, property, owner, total }
     })
 }
