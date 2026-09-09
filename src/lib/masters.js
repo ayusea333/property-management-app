@@ -44,12 +44,8 @@ export const roomFromRow = (r) => ({
   roomNumber: r.room_number,
   rent: r.rent ?? 0,
   commonFee: r.common_fee ?? 0,
-  parkingFee: r.parking_fee ?? 0,
-  bicycleFee: r.bicycle_fee ?? 0,
-  supportFee: r.support_fee ?? 0,
-  supportFeeType: r.support_fee_type || '月払い',
-  otherFee: r.other_fee ?? 0,
   managementFee: r.management_fee ?? 0,
+  extraFees: r.extra_fees || {},
   note: r.note || '',
 })
 export const roomToRow = (r) => ({
@@ -57,13 +53,18 @@ export const roomToRow = (r) => ({
   room_number: r.roomNumber,
   rent: r.rent || 0,
   common_fee: r.commonFee || 0,
-  parking_fee: r.parkingFee || 0,
-  bicycle_fee: r.bicycleFee || 0,
-  support_fee: r.supportFee || 0,
-  support_fee_type: r.supportFeeType || '月払い',
-  other_fee: r.otherFee || 0,
   management_fee: r.managementFee || 0,
+  extra_fees: r.extraFees || {},
   note: r.note || null,
+})
+
+// 費用項目マスタ(部屋ごとの駐車場代・駐輪場代・安サポなどを自由に追加/削除できるようにするための項目名一覧)
+export const feeItemFromRow = (r) => ({
+  id: r.id,
+  name: r.name,
+})
+export const feeItemToRow = (f) => ({
+  name: f.name,
 })
 
 export const tenantFromRow = (r) => ({
