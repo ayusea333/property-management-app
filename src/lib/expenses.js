@@ -7,6 +7,12 @@ export const expenseFromRow = (r) => ({
   content: r.content || '',
   payee: r.payee || '',
   amount: r.amount ?? 0,
+  payeeId: r.payee_id || '',
+  payeeType: r.payee_type || '',
+  paymentMethod: r.payment_method || '',
+  hasReceipt: !!r.has_receipt,
+  paidDate: r.paid_date || '',
+  taxType: r.tax_type || '',
 })
 
 export const expenseToRow = (e) => ({
@@ -17,4 +23,10 @@ export const expenseToRow = (e) => ({
   content: e.content || null,
   payee: e.payee || null,
   amount: e.amount || 0,
+  payee_id: e.payeeId || null,
+  payee_type: e.payeeType || null,
+  payment_method: e.paymentMethod || null,
+  has_receipt: !!e.hasReceipt,
+  paid_date: e.paidDate || null,
+  tax_type: e.taxType || null,
 })
