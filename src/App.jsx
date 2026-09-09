@@ -1185,6 +1185,7 @@ function emptyExpenseForm() {
   return {
     date: new Date().toISOString().slice(0, 10), propertyId: '', roomId: '', category: '', content: '', payee: '', amount: 0,
     payeeId: '', payeeType: '', paymentMethod: '', hasReceipt: false, paidDate: '', taxType: TAX_TYPES[0],
+    isCapitalExpenditure: false,
   }
 }
 
@@ -1224,8 +1225,8 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const periodTotal = filtered.reduce((z, e) => z + e.amount, 0)
 
   const exportCsv = () => {
-    const headers = ['日付', '物件', '号室', 'カテゴリ', '内容', '支払先', '金額', '消費税区分', '支払方法', '実際の支払日', '領収書等の保管']
-    const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount, e.taxType, e.paymentMethod, e.paidDate, e.hasReceipt ? '有' : ''])
+    const headers = ['日付', '物件', '号室', 'カテゴリ', '内容', '支払先', '金額', '消費税区分', '支払方法', '実際の支払日', '領収書等の保管', '資本的支出']
+    const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount, e.taxType, e.paymentMethod, e.paidDate, e.hasReceipt ? '有' : '', e.isCapitalExpenditure ? '該当' : ''])
     downloadCsv(`経費_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
   }
 
@@ -1248,6 +1249,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
       const col = (name) => header.indexOf(name)
       const dateIdx = col('日付'), propIdx = col('物件'), roomIdx = col('号室'), catIdx = col('カテゴリ'), contentIdx = col('内容'), payeeIdx = col('支払先'), amountIdx = col('金額')
       const taxTypeIdx = col('消費税区分'), paymentMethodIdx = col('支払方法'), paidDateIdx = col('実際の支払日'), hasReceiptIdx = col('領収書等の保管')
+      const isCapitalExpenditureIdx = col('資本的支出')
       if (dateIdx === -1 || amountIdx === -1) {
         setImportResult({ ok: 0, errors: ['見出し行に「日付」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
         return
@@ -1269,6 +1271,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
         const paymentMethod = paymentMethodIdx > -1 ? (r[paymentMethodIdx] || '').trim() : ''
         const paidDate = paidDateIdx > -1 ? normalizeDate(r[paidDateIdx] || '') : ''
         const hasReceipt = hasReceiptIdx > -1 ? ['有', 'あり', 'true', '1'].includes((r[hasReceiptIdx] || '').trim()) : false
+        const isCapitalExpenditure = isCapitalExpenditureIdx > -1 ? ['該当', '有', 'あり', 'true', '1'].includes((r[isCapitalExpenditureIdx] || '').trim()) : false
 
         if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
         if (category && !SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: カテゴリ「${category}」が見つかりません`); return }
@@ -1290,7 +1293,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
         toInsert.push(expenseToRow({
           date, propertyId, roomId, category, content, payee, amount,
           payeeId: payeeMatch?.id || '', payeeType: payeeMatch?.type || '',
-          taxType: TAX_TYPES.includes(taxType) ? taxType : '', paymentMethod, paidDate, hasReceipt,
+          taxType: TAX_TYPES.includes(taxType) ? taxType : '', paymentMethod, paidDate, hasReceipt, isCapitalExpenditure,
         }))
       })
 
@@ -1444,6 +1447,20 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
               checked={form.hasReceipt}
               onChange={(e) => setForm({ ...form, hasReceipt: e.target.checked })}
             />
+          </div>
+          <div className="form-row">
+            <label>資本的支出に該当</label>
+            <div>
+              <input
+                type="checkbox"
+                style={{ width: 18, height: 18 }}
+                checked={form.isCapitalExpenditure}
+                onChange={(e) => setForm({ ...form, isCapitalExpenditure: e.target.checked })}
+              />
+              <div className="mini" style={{ color: '#6b6167' }}>
+                修繕費ではなく、資産計上して数年に分けて経費化すべき支出(大規模修繕・改良工事など)の場合にチェックしてください
+              </div>
+            </div>
           </div>
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
