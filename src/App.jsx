@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment, useRef } from 'react'
+import { useEffect, useState, Fragment, useRef, useId } from 'react'
 import { supabase } from './lib/supabase'
 import {
   ownerFromRow, ownerToRow,
@@ -27,6 +27,7 @@ import Backups from './Backups'
 import ReportSection from './ReportSection'
 import logoUrl from './assets/logo.png'
 import './App.css'
+
 // ---- マスタ種別ごとの設定 ----
 // fields: 一覧・フォームに表示する項目
 // relation: 他のマスタに紐づく場合の設定(親を選ぶセレクトボックスを出す)
@@ -140,6 +141,48 @@ function emptyForm(fields) {
 
 function recordLabel(record) {
   return record?.name || record?.roomNumber || ''
+}
+
+// プルダウンと検索(入力しながら絞り込み)の両方が使えるセレクト。
+// options: [{ id, label }] の配列。候補と完全に一致する文字が入力された時だけ選択が確定する。
+function SearchableSelect({ value, onChange, options, placeholder }) {
+  const listId = useId()
+  const [text, setText] = useState(() => options.find((o) => o.id === value)?.label || '')
+
+  useEffect(() => {
+    setText(options.find((o) => o.id === value)?.label || '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  const handleChange = (e) => {
+    const t = e.target.value
+    setText(t)
+    if (t === '') { onChange(''); return }
+    const match = options.find((o) => o.label === t)
+    if (match) onChange(match.id)
+  }
+
+  const handleBlur = () => {
+    if (!options.find((o) => o.label === text)) {
+      setText(options.find((o) => o.id === value)?.label || '')
+    }
+  }
+
+  return (
+    <>
+      <input
+        list={listId}
+        value={text}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        placeholder={placeholder || '入力して検索、またはプルダウンから選択'}
+        autoComplete="off"
+      />
+      <datalist id={listId}>
+        {options.map((o) => <option key={o.id} value={o.label} />)}
+      </datalist>
+    </>
+  )
 }
 
 function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
@@ -271,7 +314,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
       </div>
 
       {!canEdit && (
-        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
           閲覧のみできます(編集権限がありません)
         </div>
       )}
@@ -283,15 +326,11 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
             <div className="form-row" key={field.key}>
               <label>{field.label}{field.required && <span className="required">*</span>}</label>
               {field.relation ? (
-                <select
+                <SearchableSelect
                   value={form[field.key] || ''}
-                  onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
-                >
-                  <option value="">選択してください</option>
-                  {relationOptions(field.relation).map((opt) => (
-                    <option key={opt.id} value={opt.id}>{opt.name || opt.roomNumber}</option>
-                  ))}
-                </select>
+                  onChange={(id) => setForm({ ...form, [field.key]: id })}
+                  options={relationOptions(field.relation).map((opt) => ({ id: opt.id, label: opt.name || opt.roomNumber }))}
+                />
               ) : field.options ? (
                 <select
                   value={form[field.key] || ''}
@@ -579,12 +618,12 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
       </div>
 
       {!canEdit && (
-        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
           閲覧のみできます(編集権限がありません)
         </div>
       )}
 
-      <div className="mini" style={{ marginBottom: 8, color: '#54614f' }}>
+      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
         表示中: {formatMonthLabel(targetMonth)}分
       </div>
 
@@ -652,7 +691,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
               </tr>
               {payForm && payForm.tenantId === row.tenant.id && (
                 <tr>
-                  <td colSpan={16} style={{ background: '#f4f6f2' }}>
+                  <td colSpan={16} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.tenant.name}様 {formatMonthLabel(targetMonth)}分の入金を記録</h3>
                       <div className="form-row">
@@ -730,6 +769,7 @@ function parseAmountCell(s) {
   const cleaned = String(s || '').trim().replace(/[¥,円\s]/g, '')
   return cleaned === '' ? NaN : Number(cleaned)
 }
+
 // ---- 売上一覧・入力 ----
 
 function emptySaleForm() {
@@ -929,18 +969,20 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
           <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
             <label>物件</label>
-            <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
-              <option value="">(なし)</option>
-              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={form.propertyId}
+              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
+              options={properties.map((p) => ({ id: p.id, label: p.name }))}
+            />
           </div>
           {form.propertyId && (
             <div className="form-row">
               <label>号室</label>
-              <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
-                <option value="">(なし)</option>
-                {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
-              </select>
+              <SearchableSelect
+                value={form.roomId}
+                onChange={(id) => setForm({ ...form, roomId: id })}
+                options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
+              />
             </div>
           )}
           <div className="form-row">
@@ -956,7 +998,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
               <label>実際の入金額</label>
               <div>
                 <input type="number" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })} style={{ width: 120 }} />
-                <div className="mini" style={{ color: '#54614f' }}>予約サイトからの実際の振込額。金額(予約売上)より少ない場合、差額を「サイト・決済手数料」として経費に自動登録します。分からない場合は空欄でOK。</div>
+                <div className="mini" style={{ color: '#6b6167' }}>予約サイトからの実際の振込額。金額(予約売上)より少ない場合、差額を「サイト・決済手数料」として経費に自動登録します。分からない場合は空欄でOK。</div>
               </div>
             </div>
           )}
@@ -966,7 +1008,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
           </div>
         </div>
       ) : (
-        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
           閲覧のみできます(編集権限がありません)
         </div>
       )}
@@ -1004,9 +1046,9 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
         CSVインポートは「CSVダウンロード」した形式(日付・カテゴリ・物件・号室・オーナー・内容・金額)のまま、行を追加・編集して読み込んでください。カテゴリ・物件・号室は既存の表記と完全一致している必要があります。
-          </div>
+      </div>
 
-  <table className="master-table">
+      <table className="master-table">
         <thead>
           <tr><th></th><th>日付</th><th>カテゴリ</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th></th></tr>
         </thead>
@@ -1048,6 +1090,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const fileInputRef = useRef(null)
+
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
   const roomOptions = rooms.filter((r) => r.propertyId === form.propertyId)
@@ -1203,18 +1246,20 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
           <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
             <label>物件</label>
-            <select value={form.propertyId} onChange={(e) => setForm({ ...form, propertyId: e.target.value, roomId: '' })}>
-              <option value="">(なし)</option>
-              {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={form.propertyId}
+              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
+              options={properties.map((p) => ({ id: p.id, label: p.name }))}
+            />
           </div>
           {form.propertyId && (
             <div className="form-row">
               <label>号室</label>
-              <select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
-                <option value="">(なし)</option>
-                {roomOptions.map((r) => <option key={r.id} value={r.id}>{r.roomNumber}</option>)}
-              </select>
+              <SearchableSelect
+                value={form.roomId}
+                onChange={(id) => setForm({ ...form, roomId: id })}
+                options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
+              />
             </div>
           )}
           <div className="form-row">
@@ -1233,7 +1278,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
           </div>
         </div>
       ) : (
-        <div className="mini" style={{ marginBottom: 12, color: '#54614f' }}>
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
           閲覧のみできます(編集権限がありません)
         </div>
       )}
