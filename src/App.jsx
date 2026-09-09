@@ -12,7 +12,7 @@ import {
   rentPaymentFromRow, rentPaymentToRow,
   currentMonthStr, prevMonthStr, formatMonthLabel,
 } from './lib/rentPayments'
-import { SALES_CATEGORIES, saleFromRow, saleToRow } from './lib/sales'
+import { SALES_CATEGORIES, TAX_TYPES, saleFromRow, saleToRow } from './lib/sales'
 import { expenseFromRow, expenseToRow } from './lib/expenses'
 import {
   fiscalYearLabel, fiscalMonths, currentFiscalStartYear,
@@ -110,6 +110,7 @@ const MASTER_CONFIGS = {
       { key: 'contact', label: '連絡先' },
       { key: 'address', label: '住所' },
       { key: 'contactPerson', label: '担当者' },
+      { key: 'invoiceNumber', label: 'インボイス登録番号' },
       { key: 'note', label: '備考', textarea: true },
     ],
   },
@@ -124,12 +125,15 @@ const MASTER_CONFIGS = {
       { key: 'contact', label: '連絡先' },
       { key: 'address', label: '住所' },
       { key: 'contactPerson', label: '担当者' },
+      { key: 'invoiceNumber', label: 'インボイス登録番号' },
       { key: 'note', label: '備考', textarea: true },
     ],
   },
 }
 
 const TABS = ['owners', 'properties', 'rooms', 'tenants', 'clients', 'vendors']
+
+const PAYMENT_METHODS = ['振込', '現金', 'クレジットカード', '口座振替', 'その他']
 
 function emptyForm(fields) {
   const f = {}
@@ -773,7 +777,10 @@ function parseAmountCell(s) {
 // ---- 売上一覧・入力 ----
 
 function emptySaleForm() {
-  return { date: new Date().toISOString().slice(0, 10), category: SALES_CATEGORIES[0], propertyId: '', roomId: '', content: '', amount: 0, depositAmount: '' }
+  return {
+    date: new Date().toISOString().slice(0, 10), category: SALES_CATEGORIES[0], propertyId: '', roomId: '', content: '', amount: 0, depositAmount: '',
+    paymentMethod: '', receivedDate: '', taxType: TAX_TYPES[0],
+  }
 }
 
 function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
@@ -810,8 +817,8 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
   const periodTotal = filtered.reduce((z, s) => z + s.amount, 0)
 
   const exportCsv = () => {
-    const headers = ['日付', 'カテゴリ', '物件', '号室', 'オーナー', '内容', '金額']
-    const rows = filtered.map((s) => [s.date, s.category, propertyName(s.propertyId), roomLabel(s.roomId), ownerName(s.ownerId), s.content, s.amount])
+    const headers = ['日付', 'カテゴリ', '物件', '号室', 'オーナー', '内容', '金額', '消費税区分', '支払方法', '実際の入金日']
+    const rows = filtered.map((s) => [s.date, s.category, propertyName(s.propertyId), roomLabel(s.roomId), ownerName(s.ownerId), s.content, s.amount, s.taxType, s.paymentMethod, s.receivedDate])
     downloadCsv(`売上_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
   }
 
@@ -833,6 +840,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
       const header = csvRows[0].map((h) => h.trim())
       const col = (name) => header.indexOf(name)
       const dateIdx = col('日付'), catIdx = col('カテゴリ'), propIdx = col('物件'), roomIdx = col('号室'), contentIdx = col('内容'), amountIdx = col('金額')
+      const taxTypeIdx = col('消費税区分'), paymentMethodIdx = col('支払方法'), receivedDateIdx = col('実際の入金日')
       if (dateIdx === -1 || catIdx === -1 || amountIdx === -1) {
         setImportResult({ ok: 0, errors: ['見出し行に「日付」「カテゴリ」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
         return
@@ -849,6 +857,9 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
         const roomNumber = roomIdx > -1 ? (r[roomIdx] || '').trim() : ''
         const content = contentIdx > -1 ? (r[contentIdx] || '').trim() : ''
         const amount = parseAmountCell(amountIdx > -1 ? r[amountIdx] : '')
+        const taxType = taxTypeIdx > -1 ? (r[taxTypeIdx] || '').trim() : ''
+        const paymentMethod = paymentMethodIdx > -1 ? (r[paymentMethodIdx] || '').trim() : ''
+        const receivedDate = receivedDateIdx > -1 ? normalizeDate(r[receivedDateIdx] || '') : ''
 
         if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
         if (!SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: カテゴリ「${category}」が見つかりません`); return }
@@ -867,7 +878,10 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
           roomId = rm.id
         }
         const property = properties.find((p) => p.id === propertyId)
-        toInsert.push(saleToRow({ date, category, propertyId, roomId, ownerId: property?.ownerId || '', content, amount, source: 'manual' }))
+        toInsert.push(saleToRow({
+          date, category, propertyId, roomId, ownerId: property?.ownerId || '', content, amount, source: 'manual',
+          taxType: TAX_TYPES.includes(taxType) ? taxType : '', paymentMethod, receivedDate,
+        }))
       })
 
       if (toInsert.length) {
@@ -1002,6 +1016,26 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
               </div>
             </div>
           )}
+          <div className="form-row">
+            <label>消費税区分</label>
+            <select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })}>
+              {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>支払方法</label>
+            <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
+              <option value="">(未選択)</option>
+              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>実際の入金日</label>
+            <div>
+              <input type="date" value={form.receivedDate} onChange={(e) => setForm({ ...form, receivedDate: e.target.value })} />
+              <div className="mini" style={{ color: '#6b6167' }}>計上日と実際の入金日がずれる場合のみ入力(空欄なら計上日と同じ扱い)。</div>
+            </div>
+          </div>
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
             <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
@@ -1076,7 +1110,10 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
 // ---- 経費一覧・入力 ----
 
 function emptyExpenseForm() {
-  return { date: new Date().toISOString().slice(0, 10), propertyId: '', roomId: '', category: '', content: '', payee: '', amount: 0 }
+  return {
+    date: new Date().toISOString().slice(0, 10), propertyId: '', roomId: '', category: '', content: '', payee: '', amount: 0,
+    payeeId: '', payeeType: '', paymentMethod: '', hasReceipt: false, paidDate: '', taxType: TAX_TYPES[0],
+  }
 }
 
 function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
@@ -1090,9 +1127,16 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const fileInputRef = useRef(null)
+  const payeeListId = useId()
 
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
+  const clients = allRecords.clients || []
+  const vendors = allRecords.vendors || []
+  const payeeOptions = [
+    ...vendors.map((v) => ({ id: v.id, type: 'vendor', label: v.name })),
+    ...clients.map((c) => ({ id: c.id, type: 'client', label: c.name })),
+  ]
   const roomOptions = rooms.filter((r) => r.propertyId === form.propertyId)
   const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
   const roomLabel = (id) => rooms.find((r) => r.id === id)?.roomNumber || ''
@@ -1108,8 +1152,8 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const periodTotal = filtered.reduce((z, e) => z + e.amount, 0)
 
   const exportCsv = () => {
-    const headers = ['日付', '物件', '号室', 'カテゴリ', '内容', '支払先', '金額']
-    const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount])
+    const headers = ['日付', '物件', '号室', 'カテゴリ', '内容', '支払先', '金額', '消費税区分', '支払方法', '実際の支払日', '領収書等の保管']
+    const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount, e.taxType, e.paymentMethod, e.paidDate, e.hasReceipt ? '有' : ''])
     downloadCsv(`経費_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
   }
 
@@ -1131,6 +1175,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
       const header = csvRows[0].map((h) => h.trim())
       const col = (name) => header.indexOf(name)
       const dateIdx = col('日付'), propIdx = col('物件'), roomIdx = col('号室'), catIdx = col('カテゴリ'), contentIdx = col('内容'), payeeIdx = col('支払先'), amountIdx = col('金額')
+      const taxTypeIdx = col('消費税区分'), paymentMethodIdx = col('支払方法'), paidDateIdx = col('実際の支払日'), hasReceiptIdx = col('領収書等の保管')
       if (dateIdx === -1 || amountIdx === -1) {
         setImportResult({ ok: 0, errors: ['見出し行に「日付」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
         return
@@ -1148,6 +1193,10 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
         const content = contentIdx > -1 ? (r[contentIdx] || '').trim() : ''
         const payee = payeeIdx > -1 ? (r[payeeIdx] || '').trim() : ''
         const amount = parseAmountCell(amountIdx > -1 ? r[amountIdx] : '')
+        const taxType = taxTypeIdx > -1 ? (r[taxTypeIdx] || '').trim() : ''
+        const paymentMethod = paymentMethodIdx > -1 ? (r[paymentMethodIdx] || '').trim() : ''
+        const paidDate = paidDateIdx > -1 ? normalizeDate(r[paidDateIdx] || '') : ''
+        const hasReceipt = hasReceiptIdx > -1 ? ['有', 'あり', 'true', '1'].includes((r[hasReceiptIdx] || '').trim()) : false
 
         if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
         if (category && !SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: カテゴリ「${category}」が見つかりません`); return }
@@ -1165,7 +1214,12 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
           if (!rm) { errors.push(`${lineNo}行目: 号室「${roomNumber}」が見つかりません`); return }
           roomId = rm.id
         }
-        toInsert.push(expenseToRow({ date, propertyId, roomId, category, content, payee, amount }))
+        const payeeMatch = payee ? payeeOptions.find((o) => o.label === payee) : null
+        toInsert.push(expenseToRow({
+          date, propertyId, roomId, category, content, payee, amount,
+          payeeId: payeeMatch?.id || '', payeeType: payeeMatch?.type || '',
+          taxType: TAX_TYPES.includes(taxType) ? taxType : '', paymentMethod, paidDate, hasReceipt,
+        }))
       })
 
       if (toInsert.length) {
@@ -1183,6 +1237,12 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
     } finally {
       setImporting(false)
     }
+  }
+
+  // 支払先: 業者・取引先マスタと完全一致すればリンク(payeeId/payeeType)、一致しなければ自由入力のまま保存
+  const handlePayeeChange = (text) => {
+    const match = payeeOptions.find((o) => o.label === text)
+    setForm({ ...form, payee: text, payeeId: match?.id || '', payeeType: match?.type || '' })
   }
 
   const submit = async () => {
@@ -1270,8 +1330,49 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
             </select>
           </div>
           <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 日常清掃 外注費" /></div>
-          <div className="form-row"><label>支払先</label><input value={form.payee} onChange={(e) => setForm({ ...form, payee: e.target.value })} /></div>
+          <div className="form-row">
+            <label>支払先</label>
+            <div>
+              <input
+                list={payeeListId}
+                value={form.payee}
+                onChange={(e) => handlePayeeChange(e.target.value)}
+                autoComplete="off"
+                placeholder="業者・取引先マスタから入力して検索、または自由入力"
+              />
+              <datalist id={payeeListId}>
+                {payeeOptions.map((o) => <option key={`${o.type}-${o.id}`} value={o.label} />)}
+              </datalist>
+              {form.payeeId && <div className="mini" style={{ color: '#6b6167' }}>{form.payeeType === 'vendor' ? '業者' : '取引先'}マスタとリンクしています</div>}
+            </div>
+          </div>
           <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          <div className="form-row">
+            <label>消費税区分</label>
+            <select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })}>
+              {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>支払方法</label>
+            <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
+              <option value="">(未選択)</option>
+              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>実際の支払日</label>
+            <input type="date" value={form.paidDate} onChange={(e) => setForm({ ...form, paidDate: e.target.value })} />
+          </div>
+          <div className="form-row">
+            <label>領収書等の保管</label>
+            <input
+              type="checkbox"
+              style={{ width: 18, height: 18 }}
+              checked={form.hasReceipt}
+              onChange={(e) => setForm({ ...form, hasReceipt: e.target.checked })}
+            />
+          </div>
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
             <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
