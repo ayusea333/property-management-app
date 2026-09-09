@@ -13,6 +13,7 @@ export const expenseFromRow = (r) => ({
   hasReceipt: !!r.has_receipt,
   paidDate: r.paid_date || '',
   taxType: r.tax_type || '',
+  isCapitalExpenditure: !!r.is_capital_expenditure,
 })
 
 export const expenseToRow = (e) => ({
@@ -29,4 +30,5 @@ export const expenseToRow = (e) => ({
   has_receipt: !!e.hasReceipt,
   paid_date: e.paidDate || null,
   tax_type: e.taxType || null,
+  is_capital_expenditure: !!e.isCapitalExpenditure,
 })
