@@ -99,6 +99,7 @@ export const clientFromRow = (r) => ({
   contact: r.contact || '',
   address: r.address || '',
   contactPerson: r.contact_person || '',
+  invoiceNumber: r.invoice_number || '',
   note: r.note || '',
 })
 export const clientToRow = (c) => ({
@@ -107,6 +108,7 @@ export const clientToRow = (c) => ({
   contact: c.contact || null,
   address: c.address || null,
   contact_person: c.contactPerson || null,
+  invoice_number: c.invoiceNumber || null,
   note: c.note || null,
 })
 
