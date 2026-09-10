@@ -296,7 +296,7 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments })
       <RentStatusPanel allRecords={allRecords} rentPayments={rentPayments} />
 
       <div className="panel" style={{ marginBottom: 16 }}>
-        <h2>カテゴリ別売上構成({fiscalYearLabel(fiscalYear)})</h2>
+        <h2>勘定科目別売上構成({fiscalYearLabel(fiscalYear)})</h2>
         <DonutChart data={donutData} />
       </div>
 

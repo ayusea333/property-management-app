@@ -884,7 +884,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
   const periodTotal = filtered.reduce((z, s) => z + s.amount, 0)
 
   const exportCsv = () => {
-    const headers = ['日付', 'カテゴリ', '物件', '号室', 'オーナー', '内容', '金額', '消費税区分', '支払方法', '実際の入金日']
+    const headers = ['日付', '勘定科目', '物件', '号室', 'オーナー', '内容', '金額', '消費税区分', '支払方法', '実際の入金日']
     const rows = filtered.map((s) => [s.date, s.category, propertyName(s.propertyId), roomLabel(s.roomId), ownerName(s.ownerId), s.content, s.amount, s.taxType, s.paymentMethod, s.receivedDate])
     downloadCsv(`売上_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
   }
@@ -906,10 +906,10 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
       }
       const header = csvRows[0].map((h) => h.trim())
       const col = (name) => header.indexOf(name)
-      const dateIdx = col('日付'), catIdx = col('カテゴリ'), propIdx = col('物件'), roomIdx = col('号室'), contentIdx = col('内容'), amountIdx = col('金額')
+      const dateIdx = col('日付'), catIdx = col('勘定科目') > -1 ? col('勘定科目') : col('カテゴリ'), propIdx = col('物件'), roomIdx = col('号室'), contentIdx = col('内容'), amountIdx = col('金額')
       const taxTypeIdx = col('消費税区分'), paymentMethodIdx = col('支払方法'), receivedDateIdx = col('実際の入金日')
       if (dateIdx === -1 || catIdx === -1 || amountIdx === -1) {
-        setImportResult({ ok: 0, errors: ['見出し行に「日付」「カテゴリ」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
+        setImportResult({ ok: 0, errors: ['見出し行に「日付」「勘定科目」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
         return
       }
 
@@ -929,7 +929,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
         const receivedDate = receivedDateIdx > -1 ? normalizeDate(r[receivedDateIdx] || '') : ''
 
         if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
-        if (!SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: カテゴリ「${category}」が見つかりません`); return }
+        if (!SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: 勘定科目「${category}」が見つかりません`); return }
         if (Number.isNaN(amount) || amount < 0) { errors.push(`${lineNo}行目: 金額が正しくありません(${r[amountIdx] || ''})`); return }
 
         let propertyId = ''
@@ -1067,7 +1067,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
             </div>
           )}
           <div className="form-row">
-            <label>カテゴリ</label>
+            <label>勘定科目</label>
             <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -1117,7 +1117,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
       <div className="master-toolbar">
         <PeriodFilter year={periodYear} month={periodMonth} onYear={setPeriodYear} onMonth={setPeriodMonth} />
         <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-          <option value="">全カテゴリ</option>
+          <option value="">全勘定科目</option>
           {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -1146,12 +1146,12 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
       )}
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
-        CSVインポートは「CSVダウンロード」した形式(日付・カテゴリ・物件・号室・オーナー・内容・金額)のまま、行を追加・編集して読み込んでください。カテゴリ・物件・号室は既存の表記と完全一致している必要があります。
+        CSVインポートは「CSVダウンロード」した形式(日付・勘定科目・物件・号室・オーナー・内容・金額)のまま、行を追加・編集して読み込んでください。勘定科目・物件・号室は既存の表記と完全一致している必要があります。
       </div>
 
       <table className="master-table">
         <thead>
-          <tr><th></th><th>日付</th><th>カテゴリ</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
+          <tr><th></th><th>日付</th><th>勘定科目</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
         </thead>
         <tbody>
           {filtered.map((s) => {
@@ -1225,7 +1225,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const periodTotal = filtered.reduce((z, e) => z + e.amount, 0)
 
   const exportCsv = () => {
-    const headers = ['日付', '物件', '号室', 'カテゴリ', '内容', '支払先', '金額', '消費税区分', '支払方法', '実際の支払日', '領収書等の保管', '資本的支出']
+    const headers = ['日付', '物件', '号室', '勘定科目', '内容', '支払先', '金額', '消費税区分', '支払方法', '実際の支払日', '領収書等の保管', '資本的支出']
     const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount, e.taxType, e.paymentMethod, e.paidDate, e.hasReceipt ? '有' : '', e.isCapitalExpenditure ? '該当' : ''])
     downloadCsv(`経費_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
   }
@@ -1247,7 +1247,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
       }
       const header = csvRows[0].map((h) => h.trim())
       const col = (name) => header.indexOf(name)
-      const dateIdx = col('日付'), propIdx = col('物件'), roomIdx = col('号室'), catIdx = col('カテゴリ'), contentIdx = col('内容'), payeeIdx = col('支払先'), amountIdx = col('金額')
+      const dateIdx = col('日付'), propIdx = col('物件'), roomIdx = col('号室'), catIdx = col('勘定科目') > -1 ? col('勘定科目') : col('カテゴリ'), contentIdx = col('内容'), payeeIdx = col('支払先'), amountIdx = col('金額')
       const taxTypeIdx = col('消費税区分'), paymentMethodIdx = col('支払方法'), paidDateIdx = col('実際の支払日'), hasReceiptIdx = col('領収書等の保管')
       const isCapitalExpenditureIdx = col('資本的支出')
       if (dateIdx === -1 || amountIdx === -1) {
@@ -1274,7 +1274,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
         const isCapitalExpenditure = isCapitalExpenditureIdx > -1 ? ['該当', '有', 'あり', 'true', '1'].includes((r[isCapitalExpenditureIdx] || '').trim()) : false
 
         if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
-        if (category && !SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: カテゴリ「${category}」が見つかりません`); return }
+        if (category && !SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: 勘定科目「${category}」が見つかりません`); return }
         if (Number.isNaN(amount) || amount < 0) { errors.push(`${lineNo}行目: 金額が正しくありません(${r[amountIdx] || ''})`); return }
 
         let propertyId = ''
@@ -1398,7 +1398,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
             </div>
           )}
           <div className="form-row">
-            <label>項目</label>
+            <label>勘定科目</label>
             <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               <option value="">(未選択)</option>
               {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -1501,12 +1501,12 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
       )}
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
       <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
-        CSVインポートは「CSVダウンロード」した形式(日付・物件・号室・カテゴリ・内容・支払先・金額)のまま、行を追加・編集して読み込んでください。物件・号室・カテゴリは既存の表記と完全一致している必要があります。
+        CSVインポートは「CSVダウンロード」した形式(日付・物件・号室・勘定科目・内容・支払先・金額)のまま、行を追加・編集して読み込んでください。物件・号室・勘定科目は既存の表記と完全一致している必要があります。
       </div>
 
       <table className="master-table">
         <thead>
-          <tr><th></th><th>日付</th><th>物件</th><th>号室</th><th>カテゴリ</th><th>内容</th><th>支払先</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
+          <tr><th></th><th>日付</th><th>物件</th><th>号室</th><th>勘定科目</th><th>内容</th><th>支払先</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
         </thead>
         <tbody>
           {filtered.map((e) => {
