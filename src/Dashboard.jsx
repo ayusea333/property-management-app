@@ -284,7 +284,30 @@ function MasterLeaseObligationPanel({ allRecords }) {
   )
 }
 
-export default function Dashboard({ allRecords, sales, expenses, rentPayments }) {
+function TrustFundBalancePanel({ trustFunds }) {
+  const items = trustFunds || []
+  if (items.length === 0) return null
+  const open = items.filter((t) => t.status === '保管中')
+  const depositBalance = open.filter((t) => t.direction === '預り金').reduce((z, t) => z + Number(t.amount || 0), 0)
+  const advanceBalance = open.filter((t) => t.direction === '立替金').reduce((z, t) => z + Number(t.amount || 0), 0)
+  if (depositBalance === 0 && advanceBalance === 0) return null
+
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h2>預り金・立替金の残高</h2>
+      <p className="mini" style={{ color: '#6b6167', marginBottom: 10 }}>
+        敷金・保証金・オーナー預り金・入居者預り金・修繕立替金のうち、まだ解消していない(保管中の)金額です。売上・経費・利益には含まれていません。
+      </p>
+      <div className="cards">
+        <StatCard label="預り金残高(いずれ返す義務)" value={yen(depositBalance)} />
+        <StatCard label="立替金残高(いずれ返してもらう権利)" value={yen(advanceBalance)} />
+        <StatCard label="未解消の件数" value={`${open.length}件`} />
+      </div>
+    </div>
+  )
+}
+
+export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds }) {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
   const [granularity, setGranularity] = useState('month')
 
@@ -354,6 +377,8 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments })
       <RentStatusPanel allRecords={allRecords} rentPayments={rentPayments} />
 
       <MasterLeaseObligationPanel allRecords={allRecords} />
+
+      <TrustFundBalancePanel trustFunds={trustFunds} />
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <h2>勘定科目別売上構成({fiscalYearLabel(fiscalYear)})</h2>

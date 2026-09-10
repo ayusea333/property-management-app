@@ -18,6 +18,9 @@ import { expenseFromRow, expenseToRow } from './lib/expenses'
 import {
   fiscalYearLabel, fiscalMonths, currentFiscalStartYear,
 } from './lib/period'
+import {
+  trustFundFromRow, trustFundToRow, TRUST_FUND_TYPES, TRUST_FUND_DIRECTIONS, TRUST_FUND_STATUSES,
+} from './lib/trustFunds'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -800,6 +803,278 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
   )
 }
 
+function emptyTrustFundForm() {
+  return {
+    type: '敷金',
+    direction: '預り金',
+    ownerId: '',
+    roomId: '',
+    amount: 0,
+    occurredDate: new Date().toISOString().slice(0, 10),
+    status: '保管中',
+    settledDate: '',
+    note: '',
+  }
+}
+
+// 種類を選んだときに、預り金/立替金の方向をそれらしい初期値にする(あとから変更も可能)
+const TRUST_FUND_TYPE_DEFAULT_DIRECTION = {
+  '敷金': '預り金',
+  '保証金': '預り金',
+  'オーナー預り金': '預り金',
+  '入居者預り金': '預り金',
+  '修繕立替金': '立替金',
+  'その他': '預り金',
+}
+
+function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user }) {
+  const [form, setForm] = useState(emptyTrustFundForm())
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('open') // 'open'=保管中のみ / 'all'=すべて
+  const [resolveForm, setResolveForm] = useState(null) // { id, status, settledDate, note }
+
+  const owners = allRecords.owners || []
+  const rooms = allRecords.rooms || []
+  const ownerName = (id) => owners.find((o) => o.id === id)?.name || ''
+  const roomInfo = (id) => {
+    const room = rooms.find((r) => r.id === id)
+    if (!room) return { roomLabel: '', propertyName: '' }
+    const property = (allRecords.properties || []).find((p) => p.id === room.propertyId)
+    return { roomLabel: room.roomNumber, propertyName: property?.name || '' }
+  }
+
+  const filtered = trustFunds
+    .filter((t) => (statusFilter === 'open' ? t.status === '保管中' : true))
+    .filter((t) => (typeFilter ? t.type === typeFilter : true))
+    .filter((t) => {
+      if (!search) return true
+      const { roomLabel, propertyName } = roomInfo(t.roomId)
+      const text = `${t.type} ${ownerName(t.ownerId)} ${propertyName} ${roomLabel} ${t.note}`.toLowerCase()
+      return text.includes(search.toLowerCase())
+    })
+    .sort((a, b) => (a.occurredDate < b.occurredDate ? 1 : -1))
+
+  const openItems = trustFunds.filter((t) => t.status === '保管中')
+  const stats = {
+    depositBalance: openItems.filter((t) => t.direction === '預り金').reduce((z, t) => z + Number(t.amount || 0), 0),
+    advanceBalance: openItems.filter((t) => t.direction === '立替金').reduce((z, t) => z + Number(t.amount || 0), 0),
+    openCount: openItems.length,
+  }
+
+  const submit = async () => {
+    if (!form.occurredDate) { setError('発生日を入力してください'); return }
+    if (Number(form.amount) <= 0) { setError('金額は1円以上で入力してください'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const { error: err } = await supabase.from('trust_funds').insert(trustFundToRow(form))
+      if (err) throw err
+      await onChanged()
+      await logEdit({
+        user,
+        tableLabel: '預り金・立替金',
+        action: '追加',
+        summary: `${form.type}(${form.direction}) ${ownerName(form.ownerId) || roomInfo(form.roomId).roomLabel || ''} ${yen(form.amount)}`,
+      })
+      setForm(emptyTrustFundForm())
+    } catch (e) {
+      setError('保存に失敗しました: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openResolveForm = (t) => {
+    setResolveForm({
+      id: t.id,
+      status: t.status === '保管中' ? '返金済' : t.status,
+      settledDate: t.settledDate || new Date().toISOString().slice(0, 10),
+      note: t.note || '',
+    })
+  }
+
+  const saveResolve = async () => {
+    setSaving(true)
+    try {
+      const target = trustFunds.find((t) => t.id === resolveForm.id)
+      const { error: err } = await supabase.from('trust_funds')
+        .update({ status: resolveForm.status, settled_date: resolveForm.settledDate || null, note: resolveForm.note || null })
+        .eq('id', resolveForm.id)
+      if (err) throw err
+      await onChanged()
+      await logEdit({
+        user,
+        tableLabel: '預り金・立替金',
+        action: '更新',
+        summary: `${target?.type || ''} ${yen(target?.amount || 0)} を「${resolveForm.status}」に(${resolveForm.settledDate})`,
+      })
+      setResolveForm(null)
+    } catch (e) {
+      alert('保存に失敗しました: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteItem = async (t) => {
+    if (!confirm('削除しますか?')) return
+    const { error: err } = await supabase.from('trust_funds').delete().eq('id', t.id)
+    if (err) { alert('削除に失敗しました: ' + err.message); return }
+    await onChanged()
+    await logEdit({ user, tableLabel: '預り金・立替金', action: '削除', summary: `${t.type} ${yen(t.amount)}` })
+  }
+
+  return (
+    <div>
+      <div className="cards">
+        <div className="card"><div className="label">預り金残高(保管中)</div><div className="num">{yen(stats.depositBalance)}</div></div>
+        <div className="card"><div className="label">立替金残高(保管中)</div><div className="num">{yen(stats.advanceBalance)}</div></div>
+        <div className="card"><div className="label">未解消の件数</div><div className="num">{stats.openCount}件</div></div>
+      </div>
+
+      <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+        敷金・保証金・オーナー預り金・入居者預り金・修繕立替金などを、売上・経費とは別に記録します。「預り金」は後で返す義務があるお金、「立替金」は後で返してもらう権利があるお金です。ここに記録しても売上・経費・決算レポートの金額には影響しません。
+      </div>
+
+      {canEdit ? (
+        <div className="master-form">
+          <h3>預り金・立替金の登録</h3>
+          <div className="form-row">
+            <label>種類</label>
+            <select
+              value={form.type}
+              onChange={(e) => setForm({ ...form, type: e.target.value, direction: TRUST_FUND_TYPE_DEFAULT_DIRECTION[e.target.value] || form.direction })}
+            >
+              {TRUST_FUND_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>方向</label>
+            <select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
+              {TRUST_FUND_DIRECTIONS.map((d) => <option key={d} value={d}>{d}{d === '預り金' ? '(後で返す義務があるお金)' : '(後で返してもらう権利があるお金)'}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>オーナー</label>
+            <SearchableSelect
+              value={form.ownerId}
+              onChange={(id) => setForm({ ...form, ownerId: id })}
+              options={owners.map((o) => ({ id: o.id, label: o.name }))}
+              placeholder="オーナー預り金などの場合に選択"
+            />
+          </div>
+          <div className="form-row">
+            <label>部屋</label>
+            <SearchableSelect
+              value={form.roomId}
+              onChange={(id) => setForm({ ...form, roomId: id })}
+              options={rooms.map((r) => {
+                const property = (allRecords.properties || []).find((p) => p.id === r.propertyId)
+                return { id: r.id, label: `${property?.name || ''} ${r.roomNumber}` }
+              })}
+              placeholder="敷金・保証金・入居者預り金・修繕立替金などの場合に選択"
+            />
+          </div>
+          <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          <div className="form-row"><label>発生日</label><input type="date" value={form.occurredDate} onChange={(e) => setForm({ ...form, occurredDate: e.target.value })} /></div>
+          <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="例: ○○様 敷金1か月分" /></div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="form-actions">
+            <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+          閲覧のみできます(編集権限がありません)
+        </div>
+      )}
+
+      <div className="master-toolbar">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="open">保管中のみ</option>
+          <option value="all">すべて(解消済も含む)</option>
+        </select>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="">すべての種類</option>
+          {TRUST_FUND_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <input className="search-input" placeholder="オーナー・物件・号室・備考で検索" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
+      <table className="master-table">
+        <thead>
+          <tr>
+            <th>発生日</th><th>種類</th><th>方向</th><th>オーナー</th><th>物件・号室</th>
+            <th className="amount">金額</th><th>状態</th><th>解消日</th><th>備考</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((t) => {
+            const { roomLabel, propertyName } = roomInfo(t.roomId)
+            return (
+              <Fragment key={t.id}>
+                <tr>
+                  <td>{t.occurredDate}</td>
+                  <td>{t.type}</td>
+                  <td>{t.direction}</td>
+                  <td>{ownerName(t.ownerId)}</td>
+                  <td>{propertyName} {roomLabel}</td>
+                  <td className="amount">{yen(t.amount)}</td>
+                  <td>
+                    {t.status === '保管中'
+                      ? <span className="status warn">保管中</span>
+                      : <span className="status ok">{t.status}</span>}
+                  </td>
+                  <td>{t.settledDate}</td>
+                  <td>{t.note}</td>
+                  <td>
+                    {canEdit && (
+                      <>
+                        <button className="icon-btn" onClick={() => openResolveForm(t)}>✎</button>
+                        <button className="icon-btn" onClick={() => deleteItem(t)}>🗑</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+                {resolveForm && resolveForm.id === t.id && (
+                  <tr>
+                    <td colSpan={10} style={{ background: '#f8f6f3' }}>
+                      <div className="master-form" style={{ margin: '8px 0' }}>
+                        <h3>状態を更新</h3>
+                        <div className="form-row">
+                          <label>状態</label>
+                          <select value={resolveForm.status} onChange={(e) => setResolveForm({ ...resolveForm, status: e.target.value })}>
+                            {TRUST_FUND_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+                        <div className="form-row">
+                          <label>解消日</label>
+                          <input type="date" value={resolveForm.settledDate} onChange={(e) => setResolveForm({ ...resolveForm, settledDate: e.target.value })} />
+                        </div>
+                        <div className="form-row"><label>備考</label><input value={resolveForm.note} onChange={(e) => setResolveForm({ ...resolveForm, note: e.target.value })} /></div>
+                        <div className="form-actions">
+                          <button className="btn-primary" onClick={saveResolve} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+                          <button className="btn-secondary" onClick={() => setResolveForm(null)}>キャンセル</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+          {filtered.length === 0 && (
+            <tr><td colSpan={10} className="empty-row">対象のデータがありません</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ---- 表示期間(期・月)の共通フィルタ ----
 
 function periodYearOptions() {
@@ -1544,6 +1819,7 @@ const BASE_TOP_TABS = [
   { key: 'rentPayments', label: '家賃入金' },
   { key: 'sales', label: '売上' },
   { key: 'expenses', label: '経費' },
+  { key: 'trustFunds', label: '預り金・立替金' },
   { key: 'report', label: '決算レポート' },
 ]
 
@@ -1559,6 +1835,7 @@ const PERM_FIELD_MAP = {
   rentPayments: 'can_edit_rent_payments',
   sales: 'can_edit_sales',
   expenses: 'can_edit_expenses',
+  trustFunds: 'can_edit_trust_funds',
 }
 
 export default function App() {
@@ -1574,6 +1851,7 @@ export default function App() {
   const [rentPayments, setRentPayments] = useState([])
   const [sales, setSales] = useState([])
   const [expenses, setExpenses] = useState([])
+  const [trustFunds, setTrustFunds] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -1628,6 +1906,10 @@ export default function App() {
       const { data: expData, error: expError } = await supabase.from('expenses').select('*')
       if (expError) throw expError
       setExpenses((expData || []).map(expenseFromRow))
+
+      const { data: tfData, error: tfError } = await supabase.from('trust_funds').select('*')
+      if (tfError) throw tfError
+      setTrustFunds((tfData || []).map(trustFundFromRow))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
     } finally {
@@ -1768,8 +2050,17 @@ export default function App() {
               user={session.user}
             />
           )}
+          {!loading && !loadError && topTab === 'trustFunds' && (
+            <TrustFundsSection
+              allRecords={allRecords}
+              trustFunds={trustFunds}
+              onChanged={loadAll}
+              canEdit={canEdit('trustFunds')}
+              user={session.user}
+            />
+          )}
           {!loading && !loadError && topTab === 'dashboard' && (
-            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} />
+            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} />
           )}
           {!loading && !loadError && topTab === 'report' && (
             <ReportSection sales={sales} expenses={expenses} />
