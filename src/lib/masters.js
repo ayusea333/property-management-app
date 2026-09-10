@@ -45,6 +45,9 @@ export const roomFromRow = (r) => ({
   rent: r.rent ?? 0,
   commonFee: r.common_fee ?? 0,
   managementFee: r.management_fee ?? 0,
+  managementFeeType: r.management_fee_type || '固定額',
+  managementFeeRate: r.management_fee_rate ?? '',
+  managementFeeBase: r.management_fee_base || '',
   extraFees: r.extra_fees || {},
   note: r.note || '',
 })
@@ -54,6 +57,9 @@ export const roomToRow = (r) => ({
   rent: r.rent || 0,
   common_fee: r.commonFee || 0,
   management_fee: r.managementFee || 0,
+  management_fee_type: r.managementFeeType || '固定額',
+  management_fee_rate: r.managementFeeRate === '' ? null : r.managementFeeRate,
+  management_fee_base: r.managementFeeBase || null,
   extra_fees: r.extraFees || {},
   note: r.note || null,
 })
