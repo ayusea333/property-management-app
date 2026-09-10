@@ -2186,45 +2186,58 @@ export default function App() {
           <h1>建物管理台帳</h1>
         </div>
 
-        <nav className="sidebar-nav">
-          {topTabs.map((t) => (
-            <button
-              key={t.key}
-              className={topTab === t.key ? 'sidebar-btn active' : 'sidebar-btn'}
-              onClick={() => setTopTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-
-        {topTab === 'master' && (
-          <nav className="sidebar-subnav">
-            <div className="sidebar-subnav-label">マスタ種別</div>
-            {TABS.map((key) => (
-              <button
-                key={key}
-                className={activeTab === key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
-                onClick={() => setActiveTab(key)}
-              >
-                {MASTER_CONFIGS[key].label}
-              </button>
-            ))}
-          </nav>
-        )}
-
-        {topTab === 'admin' && (
-          <nav className="sidebar-subnav">
-            <div className="sidebar-subnav-label">管理者メニュー</div>
-            {ADMIN_SUB_TABS.map((t) => (
+        <div className="sidebar-scroll">
+          <nav className="sidebar-nav">
+            {BASE_TOP_TABS.map((t) => (
               <button
                 key={t.key}
-                className={adminTab === t.key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
-                onClick={() => setAdminTab(t.key)}
+                className={topTab === t.key ? 'sidebar-btn active' : 'sidebar-btn'}
+                onClick={() => setTopTab(t.key)}
               >
                 {t.label}
               </button>
             ))}
+          </nav>
+
+          {topTab === 'master' && (
+            <nav className="sidebar-subnav">
+              <div className="sidebar-subnav-label">マスタ種別</div>
+              {TABS.map((key) => (
+                <button
+                  key={key}
+                  className={activeTab === key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                  onClick={() => setActiveTab(key)}
+                >
+                  {MASTER_CONFIGS[key].label}
+                </button>
+              ))}
+            </nav>
+          )}
+
+          {topTab === 'admin' && (
+            <nav className="sidebar-subnav">
+              <div className="sidebar-subnav-label">管理者メニュー</div>
+              {ADMIN_SUB_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  className={adminTab === t.key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                  onClick={() => setAdminTab(t.key)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </nav>
+          )}
+        </div>
+
+        {profile?.is_admin && (
+          <nav className="sidebar-nav sidebar-nav-pinned">
+            <button
+              className={topTab === 'admin' ? 'sidebar-btn active' : 'sidebar-btn'}
+              onClick={() => setTopTab('admin')}
+            >
+              {ADMIN_TAB.label}
+            </button>
           </nav>
         )}
 

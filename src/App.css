@@ -58,6 +58,16 @@ html, body, #root {
   border-top: 4px solid var(--brand-red);
   border-right: 1px solid var(--border-color);
 }
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.sidebar-nav-pinned {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
 .sidebar-footer {
   margin-top: auto;
   padding-top: 14px;
