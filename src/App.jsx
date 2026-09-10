@@ -539,13 +539,14 @@ function yen(n) {
 
 function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, user }) {
   const feeItems = allRecords.feeItems || []
-  const rentTableColumnCount = 12 + feeItems.length
+  const rentTableColumnCount = 13 + feeItems.length
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [selected, setSelected] = useState([])
   const [payForm, setPayForm] = useState(null) // { tenantId, date, amount, note }
   const [saving, setSaving] = useState(false)
+  const [memoDrafts, setMemoDrafts] = useState({})
 
   const rows = activeTenantsFor(allRecords, targetMonth).map((row) => {
     const payment = rentPayments.find((p) => p.tenantId === row.tenant.id && p.targetMonth === targetMonth)
@@ -665,6 +666,18 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
   }
 
+  const saveArrearsNote = async (tenantId, originalNote) => {
+    const draft = memoDrafts[tenantId]
+    if (draft === undefined || draft === (originalNote || '')) return
+    try {
+      const { error } = await supabase.from('tenants').update({ arrears_note: draft || null }).eq('id', tenantId)
+      if (error) throw error
+      await onChanged()
+    } catch (e) {
+      alert('メモの保存に失敗しました: ' + e.message)
+    }
+  }
+
   return (
     <div>
       <div className="cards">
@@ -725,6 +738,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
             <th>保証会社</th>
             <th>口振</th>
             <th>{formatMonthLabel(targetMonth)}分 入金日</th>
+            <th>滞納対応メモ</th>
           </tr>
         </thead>
         <tbody>
@@ -768,6 +782,17 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
                     : canEdit
                     ? <button className="btn-secondary" onClick={() => openPayForm(row)}>入金日を入力</button>
                     : ''}
+                </td>
+                <td>
+                  {canEdit ? (
+                    <input
+                      style={{ width: 160 }}
+                      value={memoDrafts[row.tenant.id] ?? (row.tenant.arrearsNote || '')}
+                      onChange={(e) => setMemoDrafts({ ...memoDrafts, [row.tenant.id]: e.target.value })}
+                      onBlur={() => saveArrearsNote(row.tenant.id, row.tenant.arrearsNote)}
+                      placeholder="例: 本人に連絡済み、来週入金予定"
+                    />
+                  ) : (row.tenant.arrearsNote || '')}
                 </td>
               </tr>
               {payForm && payForm.tenantId === row.tenant.id && (
