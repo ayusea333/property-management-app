@@ -226,6 +226,64 @@ function RentStatusPanel({ allRecords, rentPayments }) {
   )
 }
 
+// 借上げ物件などで、オーナーへ毎月払う保証家賃(空室でも発生する)を可視化するパネル。
+// 保証家賃を設定している部屋が1件もない場合は表示しない。
+function MasterLeaseObligationPanel({ allRecords }) {
+  const rooms = allRecords.rooms || []
+  const properties = allRecords.properties || []
+  const owners = allRecords.owners || []
+  const tenants = allRecords.tenants || []
+  const today = new Date().toISOString().slice(0, 10)
+
+  const guaranteedRooms = rooms.filter((r) => Number(r.ownerGuaranteedRent) > 0)
+  if (guaranteedRooms.length === 0) return null
+
+  const isOccupied = (roomId) =>
+    tenants.some((t) => t.roomId === roomId && (!t.moveOutDate || t.moveOutDate >= today))
+
+  const totalGuaranteed = guaranteedRooms.reduce((z, r) => z + Number(r.ownerGuaranteedRent), 0)
+  const vacantRooms = guaranteedRooms.filter((r) => !isOccupied(r.id))
+  const vacantTotal = vacantRooms.reduce((z, r) => z + Number(r.ownerGuaranteedRent), 0)
+
+  const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
+  const ownerName = (propId) => {
+    const p = properties.find((x) => x.id === propId)
+    return owners.find((o) => o.id === p?.ownerId)?.name || ''
+  }
+
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h2>借上げ物件のオーナー保証家賃</h2>
+      <p className="mini" style={{ color: '#6b6167', marginBottom: 10 }}>
+        入居の有無に関わらず、毎月オーナーへ支払う義務がある金額です(部屋マスタの「オーナーへの保証家賃」で設定した部屋のみ集計)。
+      </p>
+      <div className="cards">
+        <StatCard label="月額保証家賃 合計" value={yen(totalGuaranteed)} />
+        <StatCard label="うち空室で発生中" value={`${vacantRooms.length}件 (${yen(vacantTotal)})`} />
+      </div>
+      {vacantRooms.length > 0 && (
+        <div className="tablewrap" style={{ marginTop: 12 }}>
+          <table className="master-table">
+            <thead>
+              <tr><th>物件</th><th>部屋</th><th>オーナー</th><th className="amount">保証家賃(月額)</th></tr>
+            </thead>
+            <tbody>
+              {vacantRooms.map((r) => (
+                <tr key={r.id}>
+                  <td>{propertyName(r.propertyId)}</td>
+                  <td>{r.roomNumber}</td>
+                  <td>{ownerName(r.propertyId)}</td>
+                  <td className="amount">{yen(r.ownerGuaranteedRent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Dashboard({ allRecords, sales, expenses, rentPayments }) {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
   const [granularity, setGranularity] = useState('month')
@@ -294,6 +352,8 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments })
       </div>
 
       <RentStatusPanel allRecords={allRecords} rentPayments={rentPayments} />
+
+      <MasterLeaseObligationPanel allRecords={allRecords} />
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <h2>勘定科目別売上構成({fiscalYearLabel(fiscalYear)})</h2>

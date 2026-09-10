@@ -77,6 +77,7 @@ const MASTER_CONFIGS = {
       { key: 'managementFeeType', label: '管理料の算定方法', options: ['固定額', '料率'] },
       { key: 'managementFeeRate', label: '管理料率(%。料率の場合のみ)', type: 'number', hideInList: true },
       { key: 'managementFeeBase', label: '料率の対象範囲(メモ。例: 賃料のみ/賃料+共益費)', hideInList: true },
+      { key: 'ownerGuaranteedRent', label: 'オーナーへの保証家賃(月額。借上げ等で空室でも発生する場合)', type: 'number' },
       { key: 'note', label: '備考', textarea: true },
     ],
   },
