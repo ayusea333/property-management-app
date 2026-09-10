@@ -87,6 +87,7 @@ export const tenantFromRow = (r) => ({
   debit: !!r.debit,
   sendMethod: r.send_method || '',
   sendDay: r.send_day || '',
+  arrearsNote: r.arrears_note || '',
 })
 export const tenantToRow = (t) => ({
   room_id: t.roomId || null,
@@ -99,6 +100,7 @@ export const tenantToRow = (t) => ({
   debit: !!t.debit,
   send_method: t.sendMethod || null,
   send_day: t.sendDay || null,
+  arrears_note: t.arrearsNote || null,
 })
 
 export const clientFromRow = (r) => ({
