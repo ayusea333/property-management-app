@@ -307,7 +307,29 @@ function TrustFundBalancePanel({ trustFunds }) {
   )
 }
 
-export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds }) {
+function OwnerSettlementPanel({ ownerSettlements }) {
+  const items = ownerSettlements || []
+  if (items.length === 0) return null
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const thisMonth = items.filter((s) => s.targetMonth === currentMonth)
+  const unsettled = thisMonth.filter((s) => s.status === '未精算')
+  const awaitingRemit = thisMonth.filter((s) => s.status === '精算済(送金待ち)')
+  const remittedTotal = thisMonth.filter((s) => s.status === '送金済').reduce((z, s) => z + Number(s.amount || 0), 0)
+  if (thisMonth.length === 0) return null
+
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h2>オーナー精算・送金(今月)</h2>
+      <div className="cards">
+        <StatCard label="未精算" value={`${unsettled.length}件`} />
+        <StatCard label="精算済・送金待ち" value={`${awaitingRemit.length}件`} />
+        <StatCard label="送金済 合計" value={yen(remittedTotal)} />
+      </div>
+    </div>
+  )
+}
+
+export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds, ownerSettlements }) {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
   const [granularity, setGranularity] = useState('month')
 
@@ -379,6 +401,8 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments, t
       <MasterLeaseObligationPanel allRecords={allRecords} />
 
       <TrustFundBalancePanel trustFunds={trustFunds} />
+
+      <OwnerSettlementPanel ownerSettlements={ownerSettlements} />
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <h2>勘定科目別売上構成({fiscalYearLabel(fiscalYear)})</h2>

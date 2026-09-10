@@ -21,6 +21,9 @@ import {
 import {
   trustFundFromRow, trustFundToRow, TRUST_FUND_TYPES, TRUST_FUND_DIRECTIONS, TRUST_FUND_STATUSES,
 } from './lib/trustFunds'
+import {
+  ownerSettlementFromRow, ownerSettlementToRow, OWNER_SETTLEMENT_STATUSES,
+} from './lib/ownerSettlements'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -1075,6 +1078,224 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
   )
 }
 
+function emptyOwnerSettlementForm() {
+  return {
+    ownerId: '',
+    targetMonth: currentMonthStr(),
+    amount: 0,
+    status: '未精算',
+    settlementDate: new Date().toISOString().slice(0, 10),
+    remittanceDate: '',
+    remittanceMethod: '',
+    note: '',
+  }
+}
+
+function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, settlements, onChanged, canEdit, user }) {
+  const [targetMonth, setTargetMonth] = useState(currentMonthStr())
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [form, setForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const owners = allRecords.owners || []
+  const properties = allRecords.properties || []
+  const rooms = allRecords.rooms || []
+  const tenants = allRecords.tenants || []
+
+  const rows = owners
+    .map((owner) => {
+      const ownerProperties = properties.filter((p) => p.ownerId === owner.id)
+      const ownerPropertyIds = new Set(ownerProperties.map((p) => p.id))
+      const ownerRooms = rooms.filter((r) => ownerPropertyIds.has(r.propertyId))
+      const ownerRoomIds = new Set(ownerRooms.map((r) => r.id))
+      const ownerTenantIds = new Set(tenants.filter((t) => ownerRoomIds.has(t.roomId)).map((t) => t.id))
+
+      const rentCollected = rentPayments
+        .filter((p) => p.targetMonth === targetMonth && ownerTenantIds.has(p.tenantId))
+        .reduce((z, p) => z + Number(p.amount || 0), 0)
+
+      const managementFee = sales
+        .filter((s) => s.ownerId === owner.id && s.category === '管理料' && (s.date || '').slice(0, 7) === targetMonth)
+        .reduce((z, s) => z + Number(s.amount || 0), 0)
+
+      const guaranteedRent = ownerRooms.reduce((z, r) => z + Number(r.ownerGuaranteedRent || 0), 0)
+
+      const openTrustItems = (trustFunds || []).filter((t) => t.ownerId === owner.id && t.status === '保管中')
+      const openTrustTotal = openTrustItems.reduce((z, t) => z + Number(t.amount || 0) * (t.direction === '立替金' ? -1 : 1), 0)
+
+      const settlement = (settlements || []).find((s) => s.ownerId === owner.id && s.targetMonth === targetMonth)
+      const referenceNet = rentCollected - managementFee
+
+      return {
+        owner, ownerProperties, rentCollected, managementFee, guaranteedRent,
+        openTrustItems, openTrustTotal, referenceNet, settlement,
+      }
+    })
+    .filter((row) => row.ownerProperties.length > 0)
+    .filter((row) => {
+      if (statusFilter && (row.settlement?.status || '未精算') !== statusFilter) return false
+      if (search && !row.owner.name.toLowerCase().includes(search.toLowerCase())) return false
+      return true
+    })
+    .sort((a, b) => a.owner.name.localeCompare(b.owner.name, 'ja'))
+
+  const stats = {
+    ownerCount: rows.length,
+    unsettled: rows.filter((r) => (r.settlement?.status || '未精算') === '未精算').length,
+    awaitingRemit: rows.filter((r) => r.settlement?.status === '精算済(送金待ち)').length,
+    remittedTotal: rows.filter((r) => r.settlement?.status === '送金済').reduce((z, r) => z + Number(r.settlement.amount || 0), 0),
+  }
+
+  const openForm = (row) => {
+    const s = row.settlement
+    setForm({
+      ownerId: row.owner.id,
+      targetMonth,
+      amount: s?.amount ?? row.referenceNet,
+      status: s?.status || '未精算',
+      settlementDate: s?.settlementDate || new Date().toISOString().slice(0, 10),
+      remittanceDate: s?.remittanceDate || '',
+      remittanceMethod: s?.remittanceMethod || '',
+      note: s?.note || '',
+    })
+  }
+
+  const saveForm = async () => {
+    setSaving(true)
+    try {
+      const payload = ownerSettlementToRow(form)
+      const { error } = await supabase.from('owner_settlements').upsert(payload, { onConflict: 'owner_id,target_month' })
+      if (error) throw error
+      await onChanged()
+      const ownerLabel = owners.find((o) => o.id === form.ownerId)?.name || ''
+      await logEdit({
+        user,
+        tableLabel: 'オーナー精算・送金',
+        action: '記録',
+        summary: `${ownerLabel} ${formatMonthLabel(targetMonth)}分 ${form.status} ${yen(form.amount)}`,
+      })
+      setForm(null)
+    } catch (e) {
+      alert('保存に失敗しました: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="cards">
+        <div className="card"><div className="label">対象オーナー</div><div className="num">{stats.ownerCount}件</div></div>
+        <div className="card"><div className="label">未精算</div><div className="num">{stats.unsettled}件</div></div>
+        <div className="card"><div className="label">精算済・送金待ち</div><div className="num">{stats.awaitingRemit}件</div></div>
+        <div className="card"><div className="label">送金済合計</div><div className="num">{yen(stats.remittedTotal)}</div></div>
+      </div>
+
+      <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+        「入金合計」「管理料」「保証家賃」「未解消の立替金等」は参考の数値です(自動計算はしていません)。内容をご確認のうえ、送金する金額をご自身で入力・確定してください。「精算」(金額の確定)と「送金」(実際の振込)は別々に記録できます。
+      </div>
+
+      <div className="master-toolbar">
+        <input type="month" value={targetMonth} onChange={(e) => setTargetMonth(e.target.value)} />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="">すべての状態</option>
+          {OWNER_SETTLEMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input className="search-input" placeholder="オーナー名で検索" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
+      {!canEdit && (
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+          閲覧のみできます(編集権限がありません)
+        </div>
+      )}
+
+      <table className="master-table">
+        <thead>
+          <tr>
+            <th>オーナー</th>
+            <th className="amount">入金合計(参考)</th>
+            <th className="amount">管理料(参考)</th>
+            <th className="amount">保証家賃(参考)</th>
+            <th className="amount">未解消の立替金等(参考)</th>
+            <th className="amount">精算・送金額</th>
+            <th>状態</th>
+            <th>精算日</th>
+            <th>送金日</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <Fragment key={row.owner.id}>
+              <tr>
+                <td>{row.owner.name}</td>
+                <td className="amount">{yen(row.rentCollected)}</td>
+                <td className="amount">{yen(row.managementFee)}</td>
+                <td className="amount">{row.guaranteedRent ? yen(row.guaranteedRent) : ''}</td>
+                <td className="amount">{row.openTrustItems.length ? yen(row.openTrustTotal) : ''}</td>
+                <td className="amount">{row.settlement ? yen(row.settlement.amount) : ''}</td>
+                <td>
+                  {!row.settlement || row.settlement.status === '未精算'
+                    ? <span className="status warn">未精算</span>
+                    : row.settlement.status === '送金済'
+                    ? <span className="status ok">送金済</span>
+                    : row.settlement.status === '送金エラー'
+                    ? <span className="status bad">送金エラー</span>
+                    : <span className="status warn">{row.settlement.status}</span>}
+                </td>
+                <td>{row.settlement?.settlementDate || ''}</td>
+                <td>{row.settlement?.remittanceDate || ''}</td>
+                <td>{canEdit && <button className="btn-secondary" onClick={() => openForm(row)}>精算・送金を記録</button>}</td>
+              </tr>
+              {form && form.ownerId === row.owner.id && (
+                <tr>
+                  <td colSpan={10} style={{ background: '#f8f6f3' }}>
+                    <div className="master-form" style={{ margin: '8px 0' }}>
+                      <h3>{row.owner.name}様 {formatMonthLabel(targetMonth)}分の精算・送金</h3>
+                      <div className="form-row">
+                        <label>精算・送金額</label>
+                        <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                      </div>
+                      <div className="form-row">
+                        <label>状態</label>
+                        <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                          {OWNER_SETTLEMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-row">
+                        <label>精算日(金額を確定した日)</label>
+                        <input type="date" value={form.settlementDate} onChange={(e) => setForm({ ...form, settlementDate: e.target.value })} />
+                      </div>
+                      <div className="form-row">
+                        <label>送金日(実際に振り込んだ日)</label>
+                        <input type="date" value={form.remittanceDate} onChange={(e) => setForm({ ...form, remittanceDate: e.target.value })} />
+                      </div>
+                      <div className="form-row">
+                        <label>送金方法</label>
+                        <input value={form.remittanceMethod} onChange={(e) => setForm({ ...form, remittanceMethod: e.target.value })} placeholder="例: 銀行振込" />
+                      </div>
+                      <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
+                      <div className="form-actions">
+                        <button className="btn-primary" onClick={saveForm} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+                        <button className="btn-secondary" onClick={() => setForm(null)}>キャンセル</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+          {rows.length === 0 && (
+            <tr><td colSpan={10} className="empty-row">対象のオーナーがいません</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ---- 表示期間(期・月)の共通フィルタ ----
 
 function periodYearOptions() {
@@ -1820,6 +2041,7 @@ const BASE_TOP_TABS = [
   { key: 'sales', label: '売上' },
   { key: 'expenses', label: '経費' },
   { key: 'trustFunds', label: '預り金・立替金' },
+  { key: 'ownerSettlements', label: 'オーナー精算・送金' },
   { key: 'report', label: '決算レポート' },
 ]
 
@@ -1836,6 +2058,7 @@ const PERM_FIELD_MAP = {
   sales: 'can_edit_sales',
   expenses: 'can_edit_expenses',
   trustFunds: 'can_edit_trust_funds',
+  ownerSettlements: 'can_edit_owner_settlements',
 }
 
 export default function App() {
@@ -1852,6 +2075,7 @@ export default function App() {
   const [sales, setSales] = useState([])
   const [expenses, setExpenses] = useState([])
   const [trustFunds, setTrustFunds] = useState([])
+  const [ownerSettlements, setOwnerSettlements] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -1910,6 +2134,10 @@ export default function App() {
       const { data: tfData, error: tfError } = await supabase.from('trust_funds').select('*')
       if (tfError) throw tfError
       setTrustFunds((tfData || []).map(trustFundFromRow))
+
+      const { data: osData, error: osError } = await supabase.from('owner_settlements').select('*')
+      if (osError) throw osError
+      setOwnerSettlements((osData || []).map(ownerSettlementFromRow))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
     } finally {
@@ -2059,8 +2287,20 @@ export default function App() {
               user={session.user}
             />
           )}
+          {!loading && !loadError && topTab === 'ownerSettlements' && (
+            <OwnerSettlementsSection
+              allRecords={allRecords}
+              rentPayments={rentPayments}
+              sales={sales}
+              trustFunds={trustFunds}
+              settlements={ownerSettlements}
+              onChanged={loadAll}
+              canEdit={canEdit('ownerSettlements')}
+              user={session.user}
+            />
+          )}
           {!loading && !loadError && topTab === 'dashboard' && (
-            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} />
+            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} ownerSettlements={ownerSettlements} />
           )}
           {!loading && !loadError && topTab === 'report' && (
             <ReportSection sales={sales} expenses={expenses} />

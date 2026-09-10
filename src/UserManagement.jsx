@@ -7,6 +7,7 @@ const PERM_FIELDS = [
   { key: 'can_edit_sales', label: '売上' },
   { key: 'can_edit_expenses', label: '経費' },
   { key: 'can_edit_trust_funds', label: '預り金・立替金' },
+  { key: 'can_edit_owner_settlements', label: 'オーナー精算・送金' },
 ]
 
 export default function UserManagement({ myProfile }) {
