@@ -14,6 +14,8 @@ export const expenseFromRow = (r) => ({
   paidDate: r.paid_date || '',
   taxType: r.tax_type || '',
   isCapitalExpenditure: !!r.is_capital_expenditure,
+  source: r.source || 'manual',
+  sourceRef: r.source_ref || '',
 })
 
 export const expenseToRow = (e) => ({
@@ -31,4 +33,6 @@ export const expenseToRow = (e) => ({
   paid_date: e.paidDate || null,
   tax_type: e.taxType || null,
   is_capital_expenditure: !!e.isCapitalExpenditure,
+  source: e.source || 'manual',
+  source_ref: e.sourceRef || null,
 })
