@@ -24,6 +24,9 @@ import {
 import {
   ownerSettlementFromRow, ownerSettlementToRow, OWNER_SETTLEMENT_STATUSES,
 } from './lib/ownerSettlements'
+import {
+  repairFromRow, repairToRow, REPAIR_STATUSES, COST_BEARERS,
+} from './lib/repairs'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -1321,6 +1324,341 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
   )
 }
 
+function emptyRepairForm() {
+  return {
+    propertyId: '',
+    roomId: '',
+    content: '',
+    vendorId: '',
+    status: '見積中',
+    costBearer: '未定',
+    expenseCategory: '請負工事',
+    estimateAmount: '',
+    approvedAmount: '',
+    requestDate: new Date().toISOString().slice(0, 10),
+    completionDate: '',
+    paymentDate: '',
+    note: '',
+  }
+}
+
+const REPAIR_CLOSED_STATUSES = ['完了(支払済み)', '中止']
+const REPAIR_LINKED_STATUS = '完了(支払済み)'
+
+function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, user }) {
+  const [form, setForm] = useState(null)
+  const [editForm, setEditForm] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('open')
+
+  const properties = allRecords.properties || []
+  const rooms = allRecords.rooms || []
+  const vendors = allRecords.vendors || []
+
+  const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
+  const roomLabel = (id) => rooms.find((r) => r.id === id)?.roomNumber || ''
+  const vendorName = (id) => vendors.find((v) => v.id === id)?.name || ''
+
+  const filtered = repairs
+    .filter((r) => (statusFilter === 'open' ? !REPAIR_CLOSED_STATUSES.includes(r.status) : true))
+    .filter((r) => {
+      if (!search) return true
+      const text = `${propertyName(r.propertyId)} ${roomLabel(r.roomId)} ${r.content} ${vendorName(r.vendorId)}`.toLowerCase()
+      return text.includes(search.toLowerCase())
+    })
+    .sort((a, b) => (a.requestDate < b.requestDate ? 1 : -1))
+
+  const openRepairs = repairs.filter((r) => !REPAIR_CLOSED_STATUSES.includes(r.status))
+  const stats = {
+    inProgress: openRepairs.length,
+    amountTotal: openRepairs.reduce((z, r) => z + Number(r.approvedAmount || r.estimateAmount || 0), 0),
+  }
+
+  const linkedExpense = (repairId) => (expenses || []).find((e) => e.source === 'repair' && e.sourceRef === repairId)
+
+  // 状態が「完了(支払済み)」になったら、対応する経費を自動で登録・更新する(重複はsource+source_refで防止)
+  const syncExpenseForRepair = async (repair, repairId) => {
+    if (repair.status !== REPAIR_LINKED_STATUS) return
+    const amount = Number(repair.approvedAmount || repair.estimateAmount || 0)
+    if (amount <= 0) return
+    const vendor = vendors.find((v) => v.id === repair.vendorId)
+    const row = expenseToRow({
+      date: repair.paymentDate || repair.completionDate || repair.requestDate || new Date().toISOString().slice(0, 10),
+      propertyId: repair.propertyId,
+      roomId: repair.roomId,
+      category: repair.expenseCategory || '請負工事',
+      content: repair.content,
+      payee: vendor?.name || '',
+      payeeId: repair.vendorId || '',
+      payeeType: repair.vendorId ? 'vendor' : '',
+      amount,
+      paymentMethod: '',
+      hasReceipt: false,
+      paidDate: repair.paymentDate || '',
+      taxType: TAX_TYPES[0],
+      isCapitalExpenditure: false,
+      source: 'repair',
+      sourceRef: repairId,
+    })
+    const { error: err } = await supabase.from('expenses').upsert(row, { onConflict: 'source,source_ref' })
+    if (err) throw err
+  }
+
+  const startNew = () => {
+    setForm(emptyRepairForm())
+    setError('')
+  }
+
+  const submit = async () => {
+    if (!form.content) { setError('修繕内容を入力してください'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const { data, error: err } = await supabase.from('repairs').insert(repairToRow(form)).select().single()
+      if (err) throw err
+      await syncExpenseForRepair(form, data.id)
+      await onChanged()
+      await logEdit({ user, tableLabel: '修繕管理', action: '追加', summary: `${propertyName(form.propertyId)} ${form.content}` })
+      setForm(null)
+    } catch (e) {
+      setError('保存に失敗しました: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openEdit = (r) => setEditForm({ ...r })
+
+  const saveEdit = async () => {
+    setSaving(true)
+    try {
+      const { error: err } = await supabase.from('repairs').update(repairToRow(editForm)).eq('id', editForm.id)
+      if (err) throw err
+      await syncExpenseForRepair(editForm, editForm.id)
+      await onChanged()
+      await logEdit({
+        user,
+        tableLabel: '修繕管理',
+        action: '更新',
+        summary: `${propertyName(editForm.propertyId)} ${editForm.content} → ${editForm.status}`,
+      })
+      setEditForm(null)
+    } catch (e) {
+      alert('保存に失敗しました: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteRepair = async (r) => {
+    if (!confirm('削除しますか?')) return
+    const { error: err } = await supabase.from('repairs').delete().eq('id', r.id)
+    if (err) { alert('削除に失敗しました: ' + err.message); return }
+    await onChanged()
+    await logEdit({ user, tableLabel: '修繕管理', action: '削除', summary: `${propertyName(r.propertyId)} ${r.content}` })
+  }
+
+  return (
+    <div>
+      <div className="cards">
+        <div className="card"><div className="label">進行中の案件</div><div className="num">{stats.inProgress}件</div></div>
+        <div className="card"><div className="label">進行中の金額合計(参考)</div><div className="num">{yen(stats.amountTotal)}</div></div>
+      </div>
+
+      <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+        見積中→承認待ち→発注・施工中→施工完了・支払待ち→完了(支払済み)の流れで状態を更新してください。状態を「完了(支払済み)」にして保存すると、対応する経費が「経費」画面に自動で登録されます(金額は承認金額、なければ見積金額を使用。何度保存しても重複しません)。
+      </div>
+
+      {canEdit && !form && (
+        <div className="master-toolbar">
+          <button className="btn-primary" onClick={startNew}>修繕案件を登録</button>
+        </div>
+      )}
+
+      {form && (
+        <div className="master-form">
+          <h3>修繕案件の登録</h3>
+          <div className="form-row">
+            <label>物件</label>
+            <SearchableSelect
+              value={form.propertyId}
+              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
+              options={properties.map((p) => ({ id: p.id, label: p.name }))}
+            />
+          </div>
+          {form.propertyId && (
+            <div className="form-row">
+              <label>部屋(共用部などの場合は未選択でOK)</label>
+              <SearchableSelect
+                value={form.roomId}
+                onChange={(id) => setForm({ ...form, roomId: id })}
+                options={rooms.filter((r) => r.propertyId === form.propertyId).map((r) => ({ id: r.id, label: r.roomNumber }))}
+              />
+            </div>
+          )}
+          <div className="form-row"><label>修繕内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 給湯器交換" /></div>
+          <div className="form-row">
+            <label>施工業者</label>
+            <SearchableSelect
+              value={form.vendorId}
+              onChange={(id) => setForm({ ...form, vendorId: id })}
+              options={vendors.map((v) => ({ id: v.id, label: v.name }))}
+            />
+          </div>
+          <div className="form-row"><label>見積金額</label><input type="number" value={form.estimateAmount} onChange={(e) => setForm({ ...form, estimateAmount: e.target.value })} /></div>
+          <div className="form-row">
+            <label>負担区分</label>
+            <select value={form.costBearer} onChange={(e) => setForm({ ...form, costBearer: e.target.value })}>
+              {COST_BEARERS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>経費の勘定科目(完了時に自動登録される経費用)</label>
+            <select value={form.expenseCategory} onChange={(e) => setForm({ ...form, expenseCategory: e.target.value })}>
+              {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-row"><label>依頼日</label><input type="date" value={form.requestDate} onChange={(e) => setForm({ ...form, requestDate: e.target.value })} /></div>
+          <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="form-actions">
+            <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
+            <button className="btn-secondary" onClick={() => setForm(null)}>キャンセル</button>
+          </div>
+        </div>
+      )}
+
+      <div className="master-toolbar">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="open">進行中のみ</option>
+          <option value="all">すべて(完了・中止も含む)</option>
+        </select>
+        <input className="search-input" placeholder="物件・部屋・内容・業者で検索" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
+      {!canEdit && (
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+          閲覧のみできます(編集権限がありません)
+        </div>
+      )}
+
+      <table className="master-table">
+        <thead>
+          <tr>
+            <th>依頼日</th><th>物件</th><th>部屋</th><th>内容</th><th>業者</th>
+            <th className="amount">見積金額</th><th className="amount">承認金額</th>
+            <th>負担区分</th><th>状態</th><th>完了日</th><th>支払日</th><th>経費連携</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((r) => (
+            <Fragment key={r.id}>
+              <tr>
+                <td>{r.requestDate}</td>
+                <td>{propertyName(r.propertyId)}</td>
+                <td>{roomLabel(r.roomId)}</td>
+                <td>{r.content}</td>
+                <td>{vendorName(r.vendorId)}</td>
+                <td className="amount">{r.estimateAmount !== '' ? yen(r.estimateAmount) : ''}</td>
+                <td className="amount">{r.approvedAmount !== '' ? yen(r.approvedAmount) : ''}</td>
+                <td>{r.costBearer}</td>
+                <td>
+                  {r.status === '完了(支払済み)'
+                    ? <span className="status ok">{r.status}</span>
+                    : r.status === '中止'
+                    ? <span className="status bad">{r.status}</span>
+                    : <span className="status warn">{r.status}</span>}
+                </td>
+                <td>{r.completionDate}</td>
+                <td>{r.paymentDate}</td>
+                <td>{linkedExpense(r.id) ? <span className="status ok">連携済み</span> : ''}</td>
+                <td>
+                  {canEdit && (
+                    <>
+                      <button className="icon-btn" onClick={() => openEdit(r)}>✎</button>
+                      <button className="icon-btn" onClick={() => deleteRepair(r)}>🗑</button>
+                    </>
+                  )}
+                </td>
+              </tr>
+              {editForm && editForm.id === r.id && (
+                <tr>
+                  <td colSpan={13} style={{ background: '#f8f6f3' }}>
+                    <div className="master-form" style={{ margin: '8px 0' }}>
+                      <h3>修繕案件の更新</h3>
+                      <div className="form-row">
+                        <label>物件</label>
+                        <SearchableSelect
+                          value={editForm.propertyId}
+                          onChange={(id) => setEditForm({ ...editForm, propertyId: id, roomId: '' })}
+                          options={properties.map((p) => ({ id: p.id, label: p.name }))}
+                        />
+                      </div>
+                      <div className="form-row">
+                        <label>部屋</label>
+                        <SearchableSelect
+                          value={editForm.roomId}
+                          onChange={(id) => setEditForm({ ...editForm, roomId: id })}
+                          options={rooms.filter((rm) => rm.propertyId === editForm.propertyId).map((rm) => ({ id: rm.id, label: rm.roomNumber }))}
+                        />
+                      </div>
+                      <div className="form-row"><label>修繕内容</label><input value={editForm.content} onChange={(e) => setEditForm({ ...editForm, content: e.target.value })} /></div>
+                      <div className="form-row">
+                        <label>施工業者</label>
+                        <SearchableSelect
+                          value={editForm.vendorId}
+                          onChange={(id) => setEditForm({ ...editForm, vendorId: id })}
+                          options={vendors.map((v) => ({ id: v.id, label: v.name }))}
+                        />
+                      </div>
+                      <div className="form-row"><label>見積金額</label><input type="number" value={editForm.estimateAmount} onChange={(e) => setEditForm({ ...editForm, estimateAmount: e.target.value })} /></div>
+                      <div className="form-row"><label>承認金額</label><input type="number" value={editForm.approvedAmount} onChange={(e) => setEditForm({ ...editForm, approvedAmount: e.target.value })} /></div>
+                      <div className="form-row">
+                        <label>負担区分</label>
+                        <select value={editForm.costBearer} onChange={(e) => setEditForm({ ...editForm, costBearer: e.target.value })}>
+                          {COST_BEARERS.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-row">
+                        <label>経費の勘定科目(完了時に自動登録される経費用)</label>
+                        <select value={editForm.expenseCategory} onChange={(e) => setEditForm({ ...editForm, expenseCategory: e.target.value })}>
+                          {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-row">
+                        <label>状態</label>
+                        <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}>
+                          {REPAIR_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        {editForm.status === REPAIR_LINKED_STATUS && (
+                          <div className="mini" style={{ color: '#6b6167' }}>保存すると、経費が自動で登録・更新されます</div>
+                        )}
+                      </div>
+                      <div className="form-row"><label>依頼日</label><input type="date" value={editForm.requestDate} onChange={(e) => setEditForm({ ...editForm, requestDate: e.target.value })} /></div>
+                      <div className="form-row"><label>完了日</label><input type="date" value={editForm.completionDate} onChange={(e) => setEditForm({ ...editForm, completionDate: e.target.value })} /></div>
+                      <div className="form-row"><label>支払日</label><input type="date" value={editForm.paymentDate} onChange={(e) => setEditForm({ ...editForm, paymentDate: e.target.value })} /></div>
+                      <div className="form-row"><label>備考</label><input value={editForm.note} onChange={(e) => setEditForm({ ...editForm, note: e.target.value })} /></div>
+                      <div className="form-actions">
+                        <button className="btn-primary" onClick={saveEdit} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+                        <button className="btn-secondary" onClick={() => setEditForm(null)}>キャンセル</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+          {filtered.length === 0 && (
+            <tr><td colSpan={13} className="empty-row">対象の修繕案件がありません</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ---- 表示期間(期・月)の共通フィルタ ----
 
 function periodYearOptions() {
@@ -2067,6 +2405,7 @@ const BASE_TOP_TABS = [
   { key: 'expenses', label: '経費' },
   { key: 'trustFunds', label: '預り金・立替金' },
   { key: 'ownerSettlements', label: 'オーナー精算・送金' },
+  { key: 'repairs', label: '修繕管理' },
   { key: 'report', label: '決算レポート' },
 ]
 
@@ -2084,6 +2423,7 @@ const PERM_FIELD_MAP = {
   expenses: 'can_edit_expenses',
   trustFunds: 'can_edit_trust_funds',
   ownerSettlements: 'can_edit_owner_settlements',
+  repairs: 'can_edit_repairs',
 }
 
 export default function App() {
@@ -2101,6 +2441,7 @@ export default function App() {
   const [expenses, setExpenses] = useState([])
   const [trustFunds, setTrustFunds] = useState([])
   const [ownerSettlements, setOwnerSettlements] = useState([])
+  const [repairs, setRepairs] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -2163,6 +2504,10 @@ export default function App() {
       const { data: osData, error: osError } = await supabase.from('owner_settlements').select('*')
       if (osError) throw osError
       setOwnerSettlements((osData || []).map(ownerSettlementFromRow))
+
+      const { data: repData, error: repError } = await supabase.from('repairs').select('*')
+      if (repError) throw repError
+      setRepairs((repData || []).map(repairFromRow))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
     } finally {
@@ -2337,8 +2682,18 @@ export default function App() {
               user={session.user}
             />
           )}
+          {!loading && !loadError && topTab === 'repairs' && (
+            <RepairsSection
+              allRecords={allRecords}
+              repairs={repairs}
+              expenses={expenses}
+              onChanged={loadAll}
+              canEdit={canEdit('repairs')}
+              user={session.user}
+            />
+          )}
           {!loading && !loadError && topTab === 'dashboard' && (
-            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} ownerSettlements={ownerSettlements} />
+            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} ownerSettlements={ownerSettlements} repairs={repairs} />
           )}
           {!loading && !loadError && topTab === 'report' && (
             <ReportSection sales={sales} expenses={expenses} />
