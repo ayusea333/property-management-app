@@ -54,6 +54,14 @@ export default function UserManagement({ myProfile }) {
     await updateField(p.id, 'is_disabled', value)
   }
 
+  const toggleAdmin = async (p, value) => {
+    if (!value && p.id === myProfile?.id) {
+      alert('自分自身の「管理者」は外せません(外すと誰もこの画面を開けなくなり、元に戻せなくなるためです)。')
+      return
+    }
+    await updateField(p.id, 'is_admin', value)
+  }
+
   if (loading) return <p>読み込み中...</p>
   if (error) return <p className="form-error">{error}</p>
 
@@ -63,6 +71,7 @@ export default function UserManagement({ myProfile }) {
         新しいアカウントの発行は、Supabaseの管理画面(Authentication → Users)から行ってください。
         ここでは発行済みのアカウントに、どのタブを編集できるかを設定します。「管理者」にチェックを入れると、そのアカウントは全タブ編集可能・この管理者メニューも使えるようになります。
         「無効化」にチェックを入れると、そのアカウントはすぐにログインできなくなります(データやアカウント自体は消えません。チェックを外せば元に戻せます)。
+        なお、自分自身の「管理者」チェックは外せません(外すと誰もこの画面を開けなくなるためです)。
       </p>
       <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
         アカウントを完全に削除したい場合(二度と使えないようにする場合)は、
@@ -97,7 +106,7 @@ export default function UserManagement({ myProfile }) {
                     type="checkbox"
                     checked={!!p.is_admin}
                     disabled={savingId === p.id}
-                    onChange={(e) => updateField(p.id, 'is_admin', e.target.checked)}
+                    onChange={(e) => toggleAdmin(p, e.target.checked)}
                   />
                 </td>
                 {PERM_FIELDS.map((f) => (
