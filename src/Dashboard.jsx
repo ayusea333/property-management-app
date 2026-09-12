@@ -329,7 +329,48 @@ function OwnerSettlementPanel({ ownerSettlements }) {
   )
 }
 
-export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds, ownerSettlements }) {
+function RepairsPanel({ allRecords, repairs }) {
+  const items = repairs || []
+  const closedStatuses = ['完了(支払済み)', '中止']
+  const openItems = items.filter((r) => !closedStatuses.includes(r.status))
+  if (openItems.length === 0) return null
+
+  const properties = allRecords.properties || []
+  const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
+  const amountTotal = openItems.reduce((z, r) => z + Number(r.approvedAmount || r.estimateAmount || 0), 0)
+  const awaitingApproval = openItems.filter((r) => r.status === '承認待ち')
+
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h2>修繕管理(進行中)</h2>
+      <div className="cards">
+        <StatCard label="進行中の案件" value={`${openItems.length}件`} />
+        <StatCard label="承認待ち" value={`${awaitingApproval.length}件`} />
+        <StatCard label="進行中の金額合計(参考)" value={yen(amountTotal)} />
+      </div>
+      {awaitingApproval.length > 0 && (
+        <div className="tablewrap" style={{ marginTop: 12 }}>
+          <table className="master-table">
+            <thead>
+              <tr><th>物件</th><th>内容</th><th className="amount">見積金額</th></tr>
+            </thead>
+            <tbody>
+              {awaitingApproval.map((r) => (
+                <tr key={r.id}>
+                  <td>{propertyName(r.propertyId)}</td>
+                  <td>{r.content}</td>
+                  <td className="amount">{r.estimateAmount !== '' ? yen(r.estimateAmount) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds, ownerSettlements, repairs }) {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
   const [granularity, setGranularity] = useState('month')
 
@@ -403,6 +444,8 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments, t
       <TrustFundBalancePanel trustFunds={trustFunds} />
 
       <OwnerSettlementPanel ownerSettlements={ownerSettlements} />
+
+      <RepairsPanel allRecords={allRecords} repairs={repairs} />
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <h2>勘定科目別売上構成({fiscalYearLabel(fiscalYear)})</h2>
