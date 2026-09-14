@@ -16,6 +16,7 @@ export const expenseFromRow = (r) => ({
   isCapitalExpenditure: !!r.is_capital_expenditure,
   source: r.source || 'manual',
   sourceRef: r.source_ref || '',
+  invoiceNumber: r.invoice_number || '',
 })
 
 export const expenseToRow = (e) => ({
@@ -35,4 +36,5 @@ export const expenseToRow = (e) => ({
   is_capital_expenditure: !!e.isCapitalExpenditure,
   source: e.source || 'manual',
   source_ref: e.sourceRef || null,
+  invoice_number: e.invoiceNumber || null,
 })
