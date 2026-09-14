@@ -2728,7 +2728,7 @@ export default function App() {
             />
           )}
           {!loading && !loadError && topTab === 'dashboard' && (
-            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} 
+            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} ownerSettlements={ownerSettlements} repairs={repairs} onNavigate={setTopTab} />
           )}
           {!loading && !loadError && topTab === 'report' && (
             <ReportSection sales={sales} expenses={expenses} />
