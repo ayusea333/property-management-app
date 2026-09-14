@@ -4,7 +4,8 @@ import {
   ownerFromRow, ownerToRow,
   propertyFromRow, propertyToRow,
   roomFromRow, roomToRow,
-  tenantFromRow, tenantToRow,
+  residentFromRow, residentToRow,
+  contractFromRow, contractToRow, CONTRACTOR_TYPES,
   clientFromRow, clientToRow,
   vendorFromRow, vendorToRow,
   feeItemFromRow, feeItemToRow,
@@ -90,17 +91,29 @@ const MASTER_CONFIGS = {
       { key: 'note', label: '備考', textarea: true },
     ],
   },
-  tenants: {
+  residents: {
     label: '入居者',
-    table: 'tenants',
-    fromRow: tenantFromRow,
-    toRow: tenantToRow,
+    table: 'residents',
+    fromRow: residentFromRow,
+    toRow: residentToRow,
     fields: [
       { key: 'name', label: '名前', required: true },
-      { key: 'roomId', label: '部屋', relation: 'rooms', required: true },
       { key: 'contact', label: '連絡先' },
-      { key: 'moveInDate', label: '入居日', type: 'date' },
-      { key: 'moveOutDate', label: '退去日', type: 'date' },
+      { key: 'note', label: '備考', textarea: true },
+    ],
+  },
+  contracts: {
+    label: '契約',
+    table: 'contracts',
+    fromRow: contractFromRow,
+    toRow: contractToRow,
+    fields: [
+      { key: 'residentId', label: '入居者', relation: 'residents', required: true },
+      { key: 'roomId', label: '部屋', relation: 'rooms', required: true },
+      { key: 'contractorType', label: '契約者区分', options: CONTRACTOR_TYPES },
+      { key: 'contractorName', label: '契約者名(法人名・代理人名。入居者本人と同じ場合は空欄でOK)' },
+      { key: 'moveInDate', label: '入居日(契約開始日)', type: 'date' },
+      { key: 'moveOutDate', label: '退去日(契約終了日)', type: 'date' },
       { key: 'guarantor', label: '保証会社', options: ['', 'JID', 'ジェイリース', 'いえらぶ', 'クリエイトギャランティ'] },
       { key: 'debit', label: '口座振替', type: 'checkbox' },
       { key: 'sendMethod', label: '請求書送付方法', options: ['', 'メール', '郵送'] },
@@ -150,7 +163,7 @@ const MASTER_CONFIGS = {
   },
 }
 
-const TABS = ['owners', 'properties', 'rooms', 'feeItems', 'tenants', 'clients', 'vendors']
+const TABS = ['owners', 'properties', 'rooms', 'feeItems', 'residents', 'contracts', 'clients', 'vendors']
 
 const PAYMENT_METHODS = ['振込', '現金', 'クレジットカード', '口座振替', 'その他']
 
@@ -272,7 +285,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
         return
       }
     }
-    if (masterKey === 'tenants' && form.moveInDate && form.moveOutDate && form.moveOutDate < form.moveInDate) {
+    if (masterKey === 'contracts' && form.moveInDate && form.moveOutDate && form.moveOutDate < form.moveInDate) {
       setError('「退去日」が「入居日」より前になっています')
       return
     }
@@ -293,7 +306,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
         user,
         tableLabel: config.label,
         action: isNew ? '追加' : '編集',
-        summary: recordLabel(form),
+        summary: summaryLabel(form),
       })
       cancelEdit()
     } catch (e) {
@@ -311,7 +324,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
       return
     }
     await onChanged()
-    await logEdit({ user, tableLabel: config.label, action: '削除', summary: recordLabel(record) })
+    await logEdit({ user, tableLabel: config.label, action: '削除', summary: summaryLabel(record) })
   }
 
   const relationLabel = (relKey, id) => {
@@ -319,6 +332,15 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
     const found = opts.find((o) => o.id === id)
     if (!found) return '(未設定)'
     return found.name || found.roomNumber || ''
+  }
+
+  // 編集履歴に残すおおまかな名称。「名前」欄がない場合(契約など)は、
+  // 最初の関連項目(入居者など)の名前で代用する。
+  const summaryLabel = (record) => {
+    if (record?.name) return record.name
+    const relField = config.fields.find((f) => f.relation)
+    if (relField && record?.[relField.key]) return relationLabel(relField.relation, record[relField.key])
+    return record?.roomNumber || ''
   }
 
   const feeItemOptions = allRecords.feeItems || []
@@ -673,7 +695,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
     const draft = memoDrafts[tenantId]
     if (draft === undefined || draft === (originalNote || '')) return
     try {
-      const { error } = await supabase.from('tenants').update({ arrears_note: draft || null }).eq('id', tenantId)
+      const { error } = await supabase.from('contracts').update({ arrears_note: draft || null }).eq('id', tenantId)
       if (error) throw error
       await onChanged()
     } catch (e) {
@@ -763,7 +785,12 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
                 <td>{row.owner?.name || ''}</td>
                 <td>{row.property?.name || ''}</td>
                 <td>{row.room?.roomNumber || ''}</td>
-                <td>{row.tenant.name}</td>
+                <td>
+                  {row.tenant.name}
+                  {row.tenant.contractorName && row.tenant.contractorName !== row.tenant.name && (
+                    <div className="mini" style={{ color: 'var(--text-muted)' }}>契約者: {row.tenant.contractorName}</div>
+                  )}
+                </td>
                 <td className="amount">{yen(row.rent)}</td>
                 <td className="amount">{yen(row.commonFee)}</td>
                 {feeItems.map((item) => {
@@ -2483,6 +2510,14 @@ export default function App() {
         if (error) throw error
         results[key] = (data || []).map(config.fromRow)
       }
+      // 「契約」に「入居者」の名前・連絡先を合わせて、今までどおり1人分の情報として
+      // 扱えるようにする(家賃入金・ダッシュボードなどはこの形のまま使い続けられる)。
+      const residentsById = Object.fromEntries((results.residents || []).map((r) => [r.id, r]))
+      results.tenants = (results.contracts || []).map((c) => ({
+        ...c,
+        name: residentsById[c.residentId]?.name || '',
+        contact: residentsById[c.residentId]?.contact || '',
+      }))
       setAllRecords(results)
 
       const { data: rpData, error: rpError } = await supabase.from('rent_payments').select('*')
