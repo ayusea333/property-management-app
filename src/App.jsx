@@ -31,7 +31,10 @@ import {
 } from './lib/repairs'
 import { budgetFromRow } from './lib/budgets'
 import { periodLockFromRow } from './lib/periodLocks'
-import { managementAcquisitionFromRow, acquisitionRateFromRow } from './lib/acquisitions'
+import {
+  managementAcquisitionFromRow, acquisitionRateFromRow,
+  acquisitionCoversMonth, findApplicableRate,
+} from './lib/acquisitions'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -587,8 +590,9 @@ function isMonthLocked(periodLocks, dateOrMonth) {
   return (periodLocks || []).some((l) => l.targetMonth === m)
 }
 
-function RentPaymentsSection({ allRecords, rentPayments, periodLocks, onChanged, canEdit, user }) {
+function RentPaymentsSection({ allRecords, rentPayments, periodLocks, managementAcquisitions, managementAcquisitionRates, onChanged, canEdit, user }) {
   const feeItems = allRecords.feeItems || []
+  const referralStores = allRecords.referralStores || []
   const rentTableColumnCount = 13 + feeItems.length
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
   const [search, setSearch] = useState('')
@@ -651,6 +655,34 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, onChanged,
     if (error) throw error
   }
 
+  // 新規管理獲得(グループ会社紹介)の部屋であれば、対象月分のグループ会社支払額(月額)を経費に自動計上する。
+  // 「今アクティブか」ではなく対象月が管理期間に入っているかで判定するため、後から過去分を記録しても正しい月にだけ計上される。
+  const postGroupCommissionIfNeeded = async (row) => {
+    const roomId = row.room?.id
+    if (!roomId) return
+    const acq = (managementAcquisitions || []).find((a) => a.roomId === roomId && acquisitionCoversMonth(a, targetMonth))
+    if (!acq) return
+    const rate = findApplicableRate(managementAcquisitionRates, acq.id, targetMonth)
+    if (!rate || !rate.groupMonthlyAmount) return
+    const store = referralStores.find((s) => s.id === acq.referralStoreId)
+    const payeeLabel = store ? (store.groupName ? `${store.groupName} ${store.storeName}` : store.storeName) : ''
+    const expenseRow = expenseToRow({
+      date: row.payment?.paymentDate || new Date().toISOString().slice(0, 10),
+      propertyId: row.property?.id || '',
+      roomId,
+      category: 'グループ会社支払',
+      content: `${row.tenant.name}様 ${targetMonth}分 グループ会社支払額(自動・新規管理獲得)`,
+      payee: payeeLabel,
+      payeeId: acq.referralStoreId || '',
+      payeeType: acq.referralStoreId ? 'referral_store' : '',
+      amount: rate.groupMonthlyAmount,
+      source: 'group_commission',
+      sourceRef: `${acq.id}:${targetMonth}`,
+    })
+    const { error } = await supabase.from('expenses').upsert(expenseRow, { onConflict: 'source,source_ref' })
+    if (error) throw error
+  }
+
   const savePayment = async () => {
     if (!payForm.date) { alert('入金日を入力してください'); return }
     if (Number(payForm.amount) < 0) { alert('入金額にマイナスの金額は入力できません'); return }
@@ -668,7 +700,10 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, onChanged,
       const { error } = await supabase.from('rent_payments').upsert(row, { onConflict: 'tenant_id,target_month' })
       if (error) throw error
       const target = rows.find((r) => r.tenant.id === payForm.tenantId)
-      if (target) await postManagementFeeIfNeeded({ ...target, payment: { paymentDate: payForm.date } })
+      if (target) {
+        await postManagementFeeIfNeeded({ ...target, payment: { paymentDate: payForm.date } })
+        await postGroupCommissionIfNeeded({ ...target, payment: { paymentDate: payForm.date } })
+      }
       await onChanged()
       await logEdit({
         user,
@@ -698,6 +733,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, onChanged,
         const { error } = await supabase.from('rent_payments').upsert(payload, { onConflict: 'tenant_id,target_month' })
         if (error) throw error
         await postManagementFeeIfNeeded({ ...row, payment: { paymentDate: date } })
+        await postGroupCommissionIfNeeded({ ...row, payment: { paymentDate: date } })
       }
       await onChanged()
       await logEdit({
@@ -2777,6 +2813,8 @@ export default function App() {
               allRecords={allRecords}
               rentPayments={rentPayments}
               periodLocks={periodLocks}
+              managementAcquisitions={managementAcquisitions}
+              managementAcquisitionRates={managementAcquisitionRates}
               onChanged={loadAll}
               canEdit={canEdit('rentPayments')}
               user={session.user}
@@ -2840,6 +2878,7 @@ export default function App() {
               managementAcquisitions={managementAcquisitions}
               managementAcquisitionRates={managementAcquisitionRates}
               appSettings={appSettings}
+              sales={sales}
               onChanged={loadAll}
               canEdit={canEdit('acquisitions')}
               isAdmin={!!profile?.is_admin}
