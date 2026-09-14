@@ -9,6 +9,7 @@ import {
   clientFromRow, clientToRow,
   vendorFromRow, vendorToRow,
   feeItemFromRow, feeItemToRow,
+  referralStoreFromRow, referralStoreToRow,
 } from './lib/masters'
 import {
   rentPaymentFromRow, rentPaymentToRow,
@@ -30,6 +31,7 @@ import {
 } from './lib/repairs'
 import { budgetFromRow } from './lib/budgets'
 import { periodLockFromRow } from './lib/periodLocks'
+import { managementAcquisitionFromRow, acquisitionRateFromRow } from './lib/acquisitions'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -40,6 +42,7 @@ import Backups from './Backups'
 import ReportSection from './ReportSection'
 import ExpensePdfImportPanel from './ExpensePdfImport'
 import PeriodLocks from './PeriodLocks'
+import ManagementAcquisitions from './ManagementAcquisitions'
 import logoUrl from './assets/logo.png'
 import './App.css'
 
@@ -165,9 +168,20 @@ const MASTER_CONFIGS = {
       { key: 'name', label: '項目名', required: true },
     ],
   },
+  referralStores: {
+    label: '紹介元店舗',
+    table: 'referral_stores',
+    fromRow: referralStoreFromRow,
+    toRow: referralStoreToRow,
+    fields: [
+      { key: 'storeName', label: '店舗名', required: true },
+      { key: 'groupName', label: 'グループ会社名' },
+      { key: 'note', label: '備考', textarea: true },
+    ],
+  },
 }
 
-const TABS = ['owners', 'properties', 'rooms', 'feeItems', 'residents', 'contracts', 'clients', 'vendors']
+const TABS = ['owners', 'properties', 'rooms', 'feeItems', 'residents', 'contracts', 'clients', 'vendors', 'referralStores']
 
 const PAYMENT_METHODS = ['振込', '現金', 'クレジットカード', '口座振替', 'その他']
 
@@ -2494,6 +2508,7 @@ const BASE_TOP_TABS = [
   { key: 'trustFunds', label: '預り金・立替金' },
   { key: 'ownerSettlements', label: 'オーナー精算・送金' },
   { key: 'repairs', label: '修繕管理' },
+  { key: 'acquisitions', label: '新規管理獲得' },
   { key: 'report', label: '決算レポート' },
 ]
 
@@ -2513,6 +2528,7 @@ const PERM_FIELD_MAP = {
   trustFunds: 'can_edit_trust_funds',
   ownerSettlements: 'can_edit_owner_settlements',
   repairs: 'can_edit_repairs',
+  acquisitions: 'can_edit_acquisitions',
 }
 
 export default function App() {
@@ -2533,6 +2549,9 @@ export default function App() {
   const [repairs, setRepairs] = useState([])
   const [budgets, setBudgets] = useState([])
   const [periodLocks, setPeriodLocks] = useState([])
+  const [managementAcquisitions, setManagementAcquisitions] = useState([])
+  const [managementAcquisitionRates, setManagementAcquisitionRates] = useState([])
+  const [appSettings, setAppSettings] = useState({})
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -2615,6 +2634,18 @@ export default function App() {
       const { data: plData, error: plError } = await supabase.from('period_locks').select('*')
       if (plError) throw plError
       setPeriodLocks((plData || []).map(periodLockFromRow))
+
+      const { data: maData, error: maError } = await supabase.from('management_acquisitions').select('*')
+      if (maError) throw maError
+      setManagementAcquisitions((maData || []).map(managementAcquisitionFromRow))
+
+      const { data: marData, error: marError } = await supabase.from('management_acquisition_rates').select('*')
+      if (marError) throw marError
+      setManagementAcquisitionRates((marData || []).map(acquisitionRateFromRow))
+
+      const { data: asData, error: asError } = await supabase.from('app_settings').select('*')
+      if (asError) throw asError
+      setAppSettings(Object.fromEntries((asData || []).map((r) => [r.key, r.value])))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
     } finally {
@@ -2800,6 +2831,18 @@ export default function App() {
               expenses={expenses}
               onChanged={loadAll}
               canEdit={canEdit('repairs')}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'acquisitions' && (
+            <ManagementAcquisitions
+              allRecords={allRecords}
+              managementAcquisitions={managementAcquisitions}
+              managementAcquisitionRates={managementAcquisitionRates}
+              appSettings={appSettings}
+              onChanged={loadAll}
+              canEdit={canEdit('acquisitions')}
+              isAdmin={!!profile?.is_admin}
               user={session.user}
             />
           )}
