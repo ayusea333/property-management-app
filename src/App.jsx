@@ -116,7 +116,7 @@ const MASTER_CONFIGS = {
       { key: 'moveOutDate', label: '退去日(契約終了日)', type: 'date' },
       { key: 'guarantor', label: '保証会社', options: ['', 'JID', 'ジェイリース', 'いえらぶ', 'クリエイトギャランティ'] },
       { key: 'debit', label: '口座振替', type: 'checkbox' },
-      { key: 'sendMethod', label: '請求書送付方法', options: ['', 'メール', '郵送'] },
+      
       { key: 'sendDay', label: '送付日(例: 5日)' },
       { key: 'note', label: '備考', textarea: true },
     ],
