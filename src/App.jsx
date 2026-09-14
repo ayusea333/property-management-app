@@ -1146,7 +1146,7 @@ function emptyOwnerSettlementForm() {
   }
 }
 
-function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, settlements, onChanged, canEdit, user }) {
+function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, repairs, settlements, onChanged, canEdit, user }) {
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -1176,15 +1176,29 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
 
       const guaranteedRent = ownerRooms.reduce((z, r) => z + Number(r.ownerGuaranteedRent || 0), 0)
 
+      // 今月支払い済みの修繕費のうち、オーナー負担分(会社が立て替えて払った分をオーナーから回収する必要がある金額)。
+      // 「折半」は金額の半分をオーナー負担分として扱う(内訳は下の一覧で確認できます)。
+      const ownerRepairs = (repairs || [])
+        .filter((r) => ownerPropertyIds.has(r.propertyId))
+        .filter((r) => (r.paymentDate || '').slice(0, 7) === targetMonth)
+        .filter((r) => r.costBearer === 'オーナー負担' || r.costBearer === '折半')
+      const repairOwnerBurden = ownerRepairs.reduce((z, r) => {
+        const amount = Number(r.approvedAmount || r.estimateAmount || 0)
+        return z + (r.costBearer === '折半' ? amount / 2 : amount)
+      }, 0)
+
+      // 預り金・立替金(未解消分)は、特定の月に発生した金額ではなく「今まだ残っている残高」なので、
+      // 毎月の精算額の参考数値には含めていません(含めると、解消するまで毎月同じ金額が繰り返し表示されてしまうため)。
+      // 内容を確認したうえで、必要な分だけ精算額に反映してください。
       const openTrustItems = (trustFunds || []).filter((t) => t.ownerId === owner.id && t.status === '保管中')
       const openTrustTotal = openTrustItems.reduce((z, t) => z + Number(t.amount || 0) * (t.direction === '立替金' ? -1 : 1), 0)
 
       const settlement = (settlements || []).find((s) => s.ownerId === owner.id && s.targetMonth === targetMonth)
-      const referenceNet = rentCollected - managementFee
+      const referenceNet = rentCollected - managementFee - repairOwnerBurden
 
       return {
         owner, ownerProperties, rentCollected, managementFee, guaranteedRent,
-        openTrustItems, openTrustTotal, referenceNet, settlement,
+        ownerRepairs, repairOwnerBurden, openTrustItems, openTrustTotal, referenceNet, settlement,
       }
     })
     .filter((row) => row.ownerProperties.length > 0)
@@ -1248,7 +1262,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       </div>
 
       <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-        「入金合計」「管理料」「保証家賃」「未解消の立替金等」は参考の数値です(自動計算はしていません)。内容をご確認のうえ、送金する金額をご自身で入力・確定してください。「精算」(金額の確定)と「送金」(実際の振込)は別々に記録できます。
+        「入金合計」「管理料」「保証家賃」「修繕費オーナー負担」「未解消の立替金等」は参考の数値です。「精算・送金額」の欄には、入金合計から管理料と今月支払い済みの修繕費オーナー負担分を差し引いた金額が自動で入りますが、あくまで下書きです。内容をご確認のうえ、必要に応じて修正してから送金する金額を確定してください(未解消の立替金等は、月をまたいで残る残高のため自動では反映されません)。「精算」(金額の確定)と「送金」(実際の振込)は別々に記録できます。
       </div>
 
       <div className="master-toolbar">
@@ -1273,6 +1287,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
             <th className="amount">入金合計(参考)</th>
             <th className="amount">管理料(参考)</th>
             <th className="amount">保証家賃(参考)</th>
+            <th className="amount">修繕費オーナー負担(参考)</th>
             <th className="amount">未解消の立替金等(参考)</th>
             <th className="amount">精算・送金額</th>
             <th>状態</th>
@@ -1289,6 +1304,13 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                 <td className="amount">{yen(row.rentCollected)}</td>
                 <td className="amount">{yen(row.managementFee)}</td>
                 <td className="amount">{row.guaranteedRent ? yen(row.guaranteedRent) : ''}</td>
+                <td className="amount">
+                  {row.repairOwnerBurden ? (
+                    <span title={row.ownerRepairs.map((r) => `${r.content}(${r.costBearer})`).join(', ')}>
+                      {yen(row.repairOwnerBurden)}
+                    </span>
+                  ) : ''}
+                </td>
                 <td className="amount">{row.openTrustItems.length ? yen(row.openTrustTotal) : ''}</td>
                 <td className="amount">{row.settlement ? yen(row.settlement.amount) : ''}</td>
                 <td>
@@ -1306,7 +1328,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
               </tr>
               {form && form.ownerId === row.owner.id && (
                 <tr>
-                  <td colSpan={10} style={{ background: '#f8f6f3' }}>
+                  <td colSpan={11} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.owner.name}様 {formatMonthLabel(targetMonth)}分の精算・送金</h3>
                       <div className="form-row">
@@ -1343,7 +1365,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
             </Fragment>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={10} className="empty-row">対象のオーナーがいません</td></tr>
+            <tr><td colSpan={11} className="empty-row">対象のオーナーがいません</td></tr>
           )}
         </tbody>
       </table>
@@ -2711,6 +2733,7 @@ export default function App() {
               rentPayments={rentPayments}
               sales={sales}
               trustFunds={trustFunds}
+              repairs={repairs}
               settlements={ownerSettlements}
               onChanged={loadAll}
               canEdit={canEdit('ownerSettlements')}
