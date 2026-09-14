@@ -29,6 +29,7 @@ import {
   repairFromRow, repairToRow, REPAIR_STATUSES, COST_BEARERS,
 } from './lib/repairs'
 import { budgetFromRow } from './lib/budgets'
+import { periodLockFromRow } from './lib/periodLocks'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -38,6 +39,7 @@ import EditHistory from './EditHistory'
 import Backups from './Backups'
 import ReportSection from './ReportSection'
 import ExpensePdfImportPanel from './ExpensePdfImport'
+import PeriodLocks from './PeriodLocks'
 import logoUrl from './assets/logo.png'
 import './App.css'
 
@@ -564,7 +566,14 @@ function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
 }
 
-function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, user }) {
+// 月次締め: 指定した日付(またはtarget_month)が、締められている月かどうかを調べる
+function isMonthLocked(periodLocks, dateOrMonth) {
+  if (!dateOrMonth) return false
+  const m = dateOrMonth.length === 7 ? dateOrMonth : dateOrMonth.slice(0, 7)
+  return (periodLocks || []).some((l) => l.targetMonth === m)
+}
+
+function RentPaymentsSection({ allRecords, rentPayments, periodLocks, onChanged, canEdit, user }) {
   const feeItems = allRecords.feeItems || []
   const rentTableColumnCount = 13 + feeItems.length
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
@@ -631,6 +640,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
   const savePayment = async () => {
     if (!payForm.date) { alert('入金日を入力してください'); return }
     if (Number(payForm.amount) < 0) { alert('入金額にマイナスの金額は入力できません'); return }
+    if (isMonthLocked(periodLocks, targetMonth)) { alert(`${formatMonthLabel(targetMonth)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
     setSaving(true)
     try {
       const row = rentPaymentToRow({
@@ -662,6 +672,7 @@ function RentPaymentsSection({ allRecords, rentPayments, onChanged, canEdit, use
 
   const markSelectedPaid = async () => {
     if (!selected.length) { alert('対象を選択してください'); return }
+    if (isMonthLocked(periodLocks, targetMonth)) { alert(`${formatMonthLabel(targetMonth)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
     const date = window.prompt('入金日を YYYY-MM-DD で入力してください', new Date().toISOString().slice(0, 10))
     if (!date) return
     setSaving(true)
@@ -1764,7 +1775,7 @@ function emptySaleForm() {
   }
 }
 
-function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
+function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user }) {
   const [form, setForm] = useState(emptySaleForm())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -1885,6 +1896,7 @@ function SalesSection({ allRecords, sales, onChanged, canEdit, user }) {
   const submit = async () => {
     if (!form.date || !form.amount) { setError('日付と金額は必須です'); return }
     if (Number(form.amount) < 0) { setError('金額にマイナスの金額は入力できません'); return }
+    if (isMonthLocked(periodLocks, form.date)) { setError(`${form.date.slice(0, 7)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
     setSaving(true)
     setError('')
     try {
@@ -2103,7 +2115,7 @@ function emptyExpenseForm() {
   }
 }
 
-function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
+function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit, user }) {
   const [form, setForm] = useState(emptyExpenseForm())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -2248,6 +2260,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const submit = async () => {
     if (!form.date || !form.amount) { setError('日付と金額は必須です'); return }
     if (Number(form.amount) < 0) { setError('金額にマイナスの金額は入力できません'); return }
+    if (isMonthLocked(periodLocks, form.date)) { setError(`${form.date.slice(0, 7)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
     setSaving(true)
     setError('')
     try {
@@ -2489,6 +2502,7 @@ const ADMIN_SUB_TABS = [
   { key: 'users', label: 'ユーザー管理' },
   { key: 'history', label: '変更履歴' },
   { key: 'backups', label: 'バックアップ' },
+  { key: 'periodLocks', label: '月次締め' },
 ]
 
 const PERM_FIELD_MAP = {
@@ -2518,6 +2532,7 @@ export default function App() {
   const [ownerSettlements, setOwnerSettlements] = useState([])
   const [repairs, setRepairs] = useState([])
   const [budgets, setBudgets] = useState([])
+  const [periodLocks, setPeriodLocks] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -2596,6 +2611,10 @@ export default function App() {
       const { data: bgData, error: bgError } = await supabase.from('budgets').select('*')
       if (bgError) throw bgError
       setBudgets((bgData || []).map(budgetFromRow))
+
+      const { data: plData, error: plError } = await supabase.from('period_locks').select('*')
+      if (plError) throw plError
+      setPeriodLocks((plData || []).map(periodLockFromRow))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
     } finally {
@@ -2726,6 +2745,7 @@ export default function App() {
             <RentPaymentsSection
               allRecords={allRecords}
               rentPayments={rentPayments}
+              periodLocks={periodLocks}
               onChanged={loadAll}
               canEdit={canEdit('rentPayments')}
               user={session.user}
@@ -2735,6 +2755,7 @@ export default function App() {
             <SalesSection
               allRecords={allRecords}
               sales={sales}
+              periodLocks={periodLocks}
               onChanged={loadAll}
               canEdit={canEdit('sales')}
               user={session.user}
@@ -2744,6 +2765,7 @@ export default function App() {
             <ExpensesSection
               allRecords={allRecords}
               expenses={expenses}
+              periodLocks={periodLocks}
               onChanged={loadAll}
               canEdit={canEdit('expenses')}
               user={session.user}
@@ -2792,6 +2814,7 @@ export default function App() {
               {adminTab === 'users' && <UserManagement myProfile={profile} />}
               {adminTab === 'history' && <EditHistory />}
               {adminTab === 'backups' && <Backups onRestored={loadAll} />}
+              {adminTab === 'periodLocks' && <PeriodLocks user={session.user} onChanged={loadAll} />}
             </>
           )}
         </main>
