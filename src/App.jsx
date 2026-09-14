@@ -35,6 +35,7 @@ import {
   managementAcquisitionFromRow, acquisitionRateFromRow,
   acquisitionCoversMonth, findApplicableRate,
 } from './lib/acquisitions'
+import { storeSettlementFromRow } from './lib/storeSettlements'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -46,6 +47,7 @@ import ReportSection from './ReportSection'
 import ExpensePdfImportPanel from './ExpensePdfImport'
 import PeriodLocks from './PeriodLocks'
 import ManagementAcquisitions from './ManagementAcquisitions'
+import StoreSettlements from './StoreSettlements'
 import logoUrl from './assets/logo.png'
 import './App.css'
 
@@ -2545,6 +2547,7 @@ const BASE_TOP_TABS = [
   { key: 'ownerSettlements', label: 'オーナー精算・送金' },
   { key: 'repairs', label: '修繕管理' },
   { key: 'acquisitions', label: '新規管理獲得' },
+  { key: 'storeSettlements', label: '店舗精算' },
   { key: 'report', label: '決算レポート' },
 ]
 
@@ -2565,6 +2568,7 @@ const PERM_FIELD_MAP = {
   ownerSettlements: 'can_edit_owner_settlements',
   repairs: 'can_edit_repairs',
   acquisitions: 'can_edit_acquisitions',
+  storeSettlements: 'can_edit_store_settlements',
 }
 
 export default function App() {
@@ -2588,6 +2592,7 @@ export default function App() {
   const [managementAcquisitions, setManagementAcquisitions] = useState([])
   const [managementAcquisitionRates, setManagementAcquisitionRates] = useState([])
   const [appSettings, setAppSettings] = useState({})
+  const [storeSettlements, setStoreSettlements] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -2682,6 +2687,10 @@ export default function App() {
       const { data: asData, error: asError } = await supabase.from('app_settings').select('*')
       if (asError) throw asError
       setAppSettings(Object.fromEntries((asData || []).map((r) => [r.key, r.value])))
+
+      const { data: ssData, error: ssError } = await supabase.from('store_settlements').select('*')
+      if (ssError) throw ssError
+      setStoreSettlements((ssData || []).map(storeSettlementFromRow))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
     } finally {
@@ -2882,6 +2891,16 @@ export default function App() {
               onChanged={loadAll}
               canEdit={canEdit('acquisitions')}
               isAdmin={!!profile?.is_admin}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'storeSettlements' && (
+            <StoreSettlements
+              allRecords={allRecords}
+              expenses={expenses}
+              settlements={storeSettlements}
+              onChanged={loadAll}
+              canEdit={canEdit('storeSettlements')}
               user={session.user}
             />
           )}
