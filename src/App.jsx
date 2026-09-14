@@ -189,6 +189,13 @@ const MASTER_CONFIGS = {
 
 const TABS = ['owners', 'properties', 'rooms', 'feeItems', 'residents', 'contracts', 'clients', 'vendors', 'referralStores']
 
+// マスタ管理のサブタブが縦に長くなりすぎて見づらくならないよう、関連する項目ごとにグループ分けして表示する
+const MASTER_GROUPS = [
+  { label: '物件関連', keys: ['owners', 'properties', 'rooms', 'feeItems'] },
+  { label: '入居関連', keys: ['residents', 'contracts'] },
+  { label: '取引先関連', keys: ['clients', 'vendors', 'referralStores'] },
+]
+
 const PAYMENT_METHODS = ['振込', '現金', 'クレジットカード', '口座振替', 'その他']
 
 function emptyForm(fields) {
@@ -2762,14 +2769,19 @@ export default function App() {
           {topTab === 'master' && (
             <nav className="sidebar-subnav">
               <div className="sidebar-subnav-label">マスタ種別</div>
-              {TABS.map((key) => (
-                <button
-                  key={key}
-                  className={activeTab === key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
-                  onClick={() => setActiveTab(key)}
-                >
-                  {MASTER_CONFIGS[key].label}
-                </button>
+              {MASTER_GROUPS.map((g) => (
+                <div key={g.label} className="sidebar-subnav-group">
+                  <div className="sidebar-subnav-group-label">{g.label}</div>
+                  {g.keys.map((key) => (
+                    <button
+                      key={key}
+                      className={activeTab === key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                      onClick={() => setActiveTab(key)}
+                    >
+                      {MASTER_CONFIGS[key].label}
+                    </button>
+                  ))}
+                </div>
               ))}
             </nav>
           )}
