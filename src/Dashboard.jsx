@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { SALES_CATEGORIES } from './lib/sales'
 import { fiscalYearLabel, fiscalMonths, fiscalHalves, currentFiscalStartYear } from './lib/period'
-import { currentMonthStr } from './lib/rentPayments'
+import { currentMonthStr, formatMonthLabel } from './lib/rentPayments'
 
 // dataviz skillの検証済みパレット(9色・固定順、SALES_CATEGORIESの並びと対応)
 const CATEGORY_COLORS = [
@@ -170,6 +170,58 @@ function activeContractsFor(allRecords, month) {
       const total = (room?.rent || 0) + (room?.commonFee || 0) + extraFeesMonthlyTotal(room)
       return { tenant: t, room, property, owner, total }
     })
+}
+
+// 「今、自分が確認すべきものは何か」を1か所にまとめて表示するパネル。
+// 新しいデータは持たず、既存の各画面のステータスを集約して見せるだけ。クリックすると該当タブに移動する。
+function PendingBox({ allRecords, rentPayments, repairs, ownerSettlements, trustFunds, onNavigate }) {
+  const thisMonth = currentMonthStr()
+  const contracts = activeContractsFor(allRecords, thisMonth)
+  const paidIds = new Set(rentPayments.filter((p) => p.targetMonth === thisMonth).map((p) => p.tenantId))
+  const unpaidCount = contracts.filter((c) => !paidIds.has(c.tenant.id)).length
+
+  const repairsAwaiting = (repairs || []).filter((r) => r.status === '承認待ち').length
+
+  const settlementsThisMonth = (ownerSettlements || []).filter((s) => s.targetMonth === thisMonth)
+  const ownersWithProperty = (allRecords.owners || []).filter((o) =>
+    (allRecords.properties || []).some((p) => p.ownerId === o.id)
+  )
+  const unsettledCount = ownersWithProperty.filter((o) => {
+    const s = settlementsThisMonth.find((x) => x.ownerId === o.id)
+    return !s || s.status === '未精算'
+  }).length
+
+  const trustOpenCount = (trustFunds || []).filter((t) => t.status === '保管中').length
+
+  const items = [
+    { key: 'rentPayments', label: `家賃入金:未入金 ${unpaidCount}件(${formatMonthLabel(thisMonth)}分)`, count: unpaidCount },
+    { key: 'repairs', label: `修繕管理:承認待ち ${repairsAwaiting}件`, count: repairsAwaiting },
+    { key: 'ownerSettlements', label: `オーナー精算・送金:未精算 ${unsettledCount}件(${formatMonthLabel(thisMonth)}分)`, count: unsettledCount },
+    { key: 'trustFunds', label: `預り金・立替金:未解消 ${trustOpenCount}件`, count: trustOpenCount },
+  ].filter((it) => it.count > 0)
+
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h2>要確認</h2>
+      {items.length === 0 ? (
+        <p className="mini" style={{ color: '#6b6167' }}>現在、要確認の項目はありません。</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {items.map((it) => (
+            <button
+              key={it.key}
+              type="button"
+              onClick={() => onNavigate?.(it.key)}
+              className="btn-secondary"
+              style={{ textAlign: 'left', width: '100%' }}
+            >
+              {it.label} →
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function RentStatusPanel({ allRecords, rentPayments }) {
@@ -370,7 +422,7 @@ function RepairsPanel({ allRecords, repairs }) {
   )
 }
 
-export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds, ownerSettlements, repairs }) {
+export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds, ownerSettlements, repairs, onNavigate }) {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
   const [granularity, setGranularity] = useState('month')
 
@@ -436,6 +488,15 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments, t
         <StatCard label="支出" value={yen(totalExpenses)} />
         <StatCard label="利益" value={yen(profit)} />
       </div>
+
+      <PendingBox
+        allRecords={allRecords}
+        rentPayments={rentPayments}
+        repairs={repairs}
+        ownerSettlements={ownerSettlements}
+        trustFunds={trustFunds}
+        onNavigate={onNavigate}
+      />
 
       <RentStatusPanel allRecords={allRecords} rentPayments={rentPayments} />
 
