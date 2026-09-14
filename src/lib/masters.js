@@ -145,3 +145,17 @@ export const clientToRow = (c) => ({
 
 export const vendorFromRow = clientFromRow
 export const vendorToRow = clientToRow
+
+// 紹介元店舗(新規管理獲得の紹介元となるグループ会社の店舗などを登録するマスタ)
+export const referralStoreFromRow = (r) => ({
+  id: r.id,
+  groupName: r.group_name || '',
+  storeName: r.store_name || '',
+  name: r.store_name || '', // 変更履歴の表示名として使用
+  note: r.note || '',
+})
+export const referralStoreToRow = (s) => ({
+  group_name: s.groupName || null,
+  store_name: s.storeName,
+  note: s.note || null,
+})
