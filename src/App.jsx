@@ -28,6 +28,9 @@ import {
 import {
   repairFromRow, repairToRow, REPAIR_STATUSES, COST_BEARERS,
 } from './lib/repairs'
+import {
+  budgetFromRow, budgetToRow,
+} from './lib/budgets'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -2227,9 +2230,19 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   }
 
   // 支払先: 業者・取引先マスタと完全一致すればリンク(payeeId/payeeType)、一致しなければ自由入力のまま保存
+  // あわせて、同じ支払先の直近の経費があれば、勘定科目を候補として自動で入れる(すでに勘定科目を選んでいる場合は上書きしない)
   const handlePayeeChange = (text) => {
     const match = payeeOptions.find((o) => o.label === text)
-    setForm({ ...form, payee: text, payeeId: match?.id || '', payeeType: match?.type || '' })
+    const payeeId = match?.id || ''
+    const payeeType = match?.type || ''
+    let category = form.category
+    if (!category) {
+      const past = expenses
+        .filter((e) => (payeeId ? e.payeeId === payeeId : e.payee === text))
+        .sort((a, b) => (a.date < b.date ? 1 : -1))
+      if (past.length) category = past[0].category || ''
+    }
+    setForm({ ...form, payee: text, payeeId, payeeType, category })
   }
 
   const submit = async () => {
@@ -2491,6 +2504,7 @@ export default function App() {
   const [trustFunds, setTrustFunds] = useState([])
   const [ownerSettlements, setOwnerSettlements] = useState([])
   const [repairs, setRepairs] = useState([])
+  const [budgets, setBudgets] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -2565,6 +2579,10 @@ export default function App() {
       const { data: repData, error: repError } = await supabase.from('repairs').select('*')
       if (repError) throw repError
       setRepairs((repData || []).map(repairFromRow))
+
+      const { data: bgData, error: bgError } = await supabase.from('budgets').select('*')
+      if (bgError) throw bgError
+      setBudgets((bgData || []).map(budgetFromRow))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
     } finally {
@@ -2754,7 +2772,7 @@ export default function App() {
             <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} ownerSettlements={ownerSettlements} repairs={repairs} onNavigate={setTopTab} />
           )}
           {!loading && !loadError && topTab === 'report' && (
-            <ReportSection sales={sales} expenses={expenses} />
+            <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} />
           )}
           {topTab === 'admin' && profile?.is_admin && (
             <>
