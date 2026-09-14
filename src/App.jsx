@@ -28,9 +28,7 @@ import {
 import {
   repairFromRow, repairToRow, REPAIR_STATUSES, COST_BEARERS,
 } from './lib/repairs'
-import {
-  budgetFromRow, budgetToRow,
-} from './lib/budgets'
+import { budgetFromRow } from './lib/budgets'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
@@ -39,6 +37,7 @@ import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
 import Backups from './Backups'
 import ReportSection from './ReportSection'
+import ExpensePdfImportPanel from './ExpensePdfImport'
 import logoUrl from './assets/logo.png'
 import './App.css'
 
@@ -2114,6 +2113,7 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
   const [periodMonth, setPeriodMonth] = useState('all')
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const [showPdfImport, setShowPdfImport] = useState(false)
   const fileInputRef = useRef(null)
   const payeeListId = useId()
 
@@ -2398,6 +2398,16 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
         </div>
       )}
 
+      {canEdit && showPdfImport && (
+        <ExpensePdfImportPanel
+          allRecords={allRecords}
+          expenses={expenses}
+          user={user}
+          onImported={onChanged}
+          onClose={() => setShowPdfImport(false)}
+        />
+      )}
+
       <div className="master-toolbar">
         <PeriodFilter year={periodYear} month={periodMonth} onYear={setPeriodYear} onMonth={setPeriodMonth} />
         <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -2406,6 +2416,9 @@ function ExpensesSection({ allRecords, expenses, onChanged, canEdit, user }) {
           <>
             <button className="btn-secondary" onClick={openImport} disabled={importing}>{importing ? 'インポート中...' : 'CSVインポート'}</button>
             <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
+            {!showPdfImport && (
+              <button className="btn-secondary" onClick={() => setShowPdfImport(true)}>PDFから経費を取り込む</button>
+            )}
             <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
             <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
           </>
