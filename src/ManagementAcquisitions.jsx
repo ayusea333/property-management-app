@@ -395,6 +395,7 @@ export default function ManagementAcquisitions({
       )}
 
       {view === 'unregistered' ? (
+        <div className="tablewrap">
         <table className="master-table">
           <thead>
             <tr><th>物件</th><th>部屋</th><th className="amount">現在の管理料</th><th></th></tr>
@@ -413,14 +414,16 @@ export default function ManagementAcquisitions({
             )}
           </tbody>
         </table>
+        </div>
       ) : (
+        <div className="tablewrap">
         <table className="master-table">
           <thead>
             <tr>
               <th>物件</th><th>部屋</th><th>紹介元区分</th><th>紹介元店舗</th>
               <th>開始日</th><th>終了日</th>
               <th className="amount">月額基準額</th><th className="amount">3L取り分(月額)</th><th className="amount">グループ会社支払額(月額)</th>
-              <th className="amount">決定報酬額</th><th>状態</th><th className="col-actions"></th>
+              <th className="amount">決定報酬額</th><th>状態</th><th style={{ width: 150 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -440,13 +443,15 @@ export default function ManagementAcquisitions({
                     <td className="amount">{lr ? yen(lr.groupMonthlyAmount) : ''}</td>
                     <td className="amount">{yen(a.acquisitionFee)}</td>
                     <td>{a.endDate ? <span className="status bad">終了済み</span> : <span className="status ok">管理中</span>}</td>
-                    <td className="col-actions">
-                      {canEdit && isAdmin && !a.endDate && (
-                        <button className="btn-secondary" onClick={() => startRateChange(a)}>月額を変更</button>
-                      )}
-                      {canEdit && !a.endDate && (
-                        <button className="btn-secondary" onClick={() => startEnd(a)}>管理を終了する</button>
-                      )}
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        {canEdit && isAdmin && !a.endDate && (
+                          <button className="btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => startRateChange(a)}>月額を変更</button>
+                        )}
+                        {canEdit && !a.endDate && (
+                          <button className="btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => startEnd(a)}>管理を終了する</button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {rateForm && rateForm.acquisitionId === a.id && (
@@ -492,6 +497,7 @@ export default function ManagementAcquisitions({
             )}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )
