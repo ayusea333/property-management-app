@@ -48,6 +48,7 @@ import ExpensePdfImportPanel from './ExpensePdfImport'
 import PeriodLocks from './PeriodLocks'
 import ManagementAcquisitions from './ManagementAcquisitions'
 import StoreSettlements from './StoreSettlements'
+import StoreAnalytics from './StoreAnalytics'
 import logoUrl from './assets/logo.png'
 import './App.css'
 
@@ -2548,6 +2549,7 @@ const BASE_TOP_TABS = [
   { key: 'repairs', label: '修繕管理' },
   { key: 'acquisitions', label: '新規管理獲得' },
   { key: 'storeSettlements', label: '店舗精算' },
+  { key: 'storeAnalytics', label: '店舗別実績' },
   { key: 'report', label: '決算レポート' },
 ]
 
@@ -2902,6 +2904,14 @@ export default function App() {
               onChanged={loadAll}
               canEdit={canEdit('storeSettlements')}
               user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'storeAnalytics' && (
+            <StoreAnalytics
+              allRecords={allRecords}
+              managementAcquisitions={managementAcquisitions}
+              managementAcquisitionRates={managementAcquisitionRates}
+              sales={sales}
             />
           )}
           {!loading && !loadError && topTab === 'dashboard' && (
