@@ -88,4 +88,60 @@ export const residentToRow = (p) => ({
   note: p.note || null,
 })
 
-//
+// 契約者区分(契約書にサインする人が、実際の入居者と違う場合があるための区分)
+export const CONTRACTOR_TYPES = ['個人', '法人', '代理']
+
+// 契約(どの入居者が・どの部屋に・いつからいつまで・どんな条件で住んでいるかという情報。
+// 引っ越しや更新のたびに新しい契約を1件追加していく)
+export const contractFromRow = (r) => ({
+  id: r.id,
+  residentId: r.resident_id || '',
+  roomId: r.room_id || '',
+  contractorType: r.contractor_type || '個人',
+  contractorName: r.contractor_name || '',
+  moveInDate: r.move_in_date || '',
+  moveOutDate: r.move_out_date || '',
+  note: r.note || '',
+  guarantor: r.guarantor || '',
+  debit: !!r.debit,
+  sendMethod: r.send_method || '',
+  sendDay: r.send_day || '',
+  arrearsNote: r.arrears_note || '',
+})
+export const contractToRow = (c) => ({
+  resident_id: c.residentId || null,
+  room_id: c.roomId || null,
+  contractor_type: c.contractorType || '個人',
+  contractor_name: c.contractorName || null,
+  move_in_date: c.moveInDate || null,
+  move_out_date: c.moveOutDate || null,
+  note: c.note || null,
+  guarantor: c.guarantor || null,
+  debit: !!c.debit,
+  send_method: c.sendMethod || null,
+  send_day: c.sendDay || null,
+  arrears_note: c.arrearsNote || null,
+})
+
+export const clientFromRow = (r) => ({
+  id: r.id,
+  name: r.name,
+  category: r.category || '',
+  contact: r.contact || '',
+  address: r.address || '',
+  contactPerson: r.contact_person || '',
+  invoiceNumber: r.invoice_number || '',
+  note: r.note || '',
+})
+export const clientToRow = (c) => ({
+  name: c.name,
+  category: c.category || null,
+  contact: c.contact || null,
+  address: c.address || null,
+  contact_person: c.contactPerson || null,
+  invoice_number: c.invoiceNumber || null,
+  note: c.note || null,
+})
+
+export const vendorFromRow = clientFromRow
+export const vendorToRow = clientToRow
