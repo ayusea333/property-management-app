@@ -6,6 +6,7 @@ import {
   acquisitionRateToRow,
   computeSplitAmounts,
 } from './lib/acquisitions'
+import { saleToRow } from './lib/sales'
 import { currentMonthStr, formatMonthLabel } from './lib/rentPayments'
 import { logEdit } from './lib/editLog'
 
@@ -36,6 +37,7 @@ export default function ManagementAcquisitions({
   managementAcquisitions,
   managementAcquisitionRates,
   appSettings,
+  sales,
   onChanged,
   canEdit,
   isAdmin,
@@ -71,6 +73,41 @@ export default function ManagementAcquisitions({
     const rs = (managementAcquisitionRates || []).filter((r) => r.acquisitionId === acquisitionId)
     if (rs.length === 0) return null
     return rs.reduce((best, r) => (r.effectiveFrom > best.effectiveFrom ? r : best))
+  }
+
+  // この獲得の報酬が、すでに売上として計上済みかどうか(source_refで紐付け)
+  const postedSaleFor = (acquisitionId) =>
+    (sales || []).find((s) => s.source === 'management_acquisition' && s.sourceRef === acquisitionId)
+
+  const postFeeToSales = async (acq) => {
+    if (!confirm(`決定報酬額 ${yen(acq.acquisitionFee)} を売上(新規管理獲得)として計上しますか?`)) return
+    setSaving(true)
+    setError('')
+    try {
+      const row = saleToRow({
+        date: todayStr(),
+        category: '新規管理獲得',
+        propertyId: acq.propertyId,
+        roomId: acq.roomId,
+        content: `${propertyName(acq.propertyId)} ${roomLabel(acq.roomId)} 新規管理獲得報酬(自動)`,
+        amount: acq.acquisitionFee,
+        source: 'management_acquisition',
+        sourceRef: acq.id,
+      })
+      const { error: err } = await supabase.from('sales').upsert(row, { onConflict: 'source,source_ref' })
+      if (err) throw err
+      await onChanged()
+      await logEdit({
+        user,
+        tableLabel: '新規管理獲得',
+        action: '報酬を売上計上',
+        summary: `${propertyName(acq.propertyId)} ${roomLabel(acq.roomId)} ${yen(acq.acquisitionFee)}`,
+      })
+    } catch (e) {
+      setError('売上計上に失敗しました: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   // 現在アクティブ(end_dateがnull)な管理獲得がある部屋のマップ(登録画面での二重登録防止用)
@@ -423,12 +460,13 @@ export default function ManagementAcquisitions({
               <th>物件</th><th>部屋</th><th>紹介元区分</th><th>紹介元店舗</th>
               <th>開始日</th><th>終了日</th>
               <th className="amount">月額基準額</th><th className="amount">3L取り分(月額)</th><th className="amount">グループ会社支払額(月額)</th>
-              <th className="amount">決定報酬額</th><th>状態</th><th style={{ width: 150 }}></th>
+              <th className="amount">決定報酬額</th><th>報酬計上</th><th>状態</th><th style={{ width: 150 }}></th>
             </tr>
           </thead>
           <tbody>
             {filteredList.map((a) => {
               const lr = latestRate(a.id)
+              const posted = postedSaleFor(a.id)
               return (
                 <Fragment key={a.id}>
                   <tr>
@@ -442,6 +480,15 @@ export default function ManagementAcquisitions({
                     <td className="amount">{lr ? yen(lr.threeLMonthlyAmount) : ''}</td>
                     <td className="amount">{lr ? yen(lr.groupMonthlyAmount) : ''}</td>
                     <td className="amount">{yen(a.acquisitionFee)}</td>
+                    <td>
+                      {posted ? (
+                        <span className="status ok">計上済み({yen(posted.amount)})</span>
+                      ) : a.acquisitionFee > 0 ? (
+                        canEdit && <button className="btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => postFeeToSales(a)} disabled={saving}>報酬を売上計上</button>
+                      ) : (
+                        <span className="mini" style={{ color: '#6b6167' }}>未計上</span>
+                      )}
+                    </td>
                     <td>{a.endDate ? <span className="status bad">終了済み</span> : <span className="status ok">管理中</span>}</td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
@@ -456,7 +503,7 @@ export default function ManagementAcquisitions({
                   </tr>
                   {rateForm && rateForm.acquisitionId === a.id && (
                     <tr>
-                      <td colSpan={12} style={{ background: '#f8f6f3' }}>
+                      <td colSpan={13} style={{ background: '#f8f6f3' }}>
                         <div className="master-form" style={{ margin: '8px 0' }}>
                           <h3>月額支払額の変更(この対象月以降に適用。過去月の金額は変わりません)</h3>
                           <div className="form-row">
@@ -476,7 +523,7 @@ export default function ManagementAcquisitions({
                   )}
                   {endingId === a.id && (
                     <tr>
-                      <td colSpan={12} style={{ background: '#f8f6f3' }}>
+                      <td colSpan={13} style={{ background: '#f8f6f3' }}>
                         <div className="master-form" style={{ margin: '8px 0' }}>
                           <h3>この部屋の管理を終了しますか?</h3>
                           <div className="form-row"><label>終了日</label><input type="date" value={endDateInput} onChange={(e) => setEndDateInput(e.target.value)} /></div>
@@ -493,7 +540,7 @@ export default function ManagementAcquisitions({
               )
             })}
             {filteredList.length === 0 && (
-              <tr><td colSpan={12} className="empty-row">対象の管理獲得がありません</td></tr>
+              <tr><td colSpan={13} className="empty-row">対象の管理獲得がありません</td></tr>
             )}
           </tbody>
         </table>
