@@ -2549,8 +2549,6 @@ const BASE_TOP_TABS = [
   { key: 'repairs', label: '修繕管理' },
   { key: 'acquisitions', label: '新規管理獲得' },
   { key: 'storeSettlements', label: '店舗精算' },
-  { key: 'storeAnalytics', label: '店舗別実績' },
-  { key: 'report', label: '決算レポート' },
 ]
 
 const ADMIN_TAB = { key: 'admin', label: '管理者' }
@@ -2559,6 +2557,12 @@ const ADMIN_SUB_TABS = [
   { key: 'history', label: '変更履歴' },
   { key: 'backups', label: 'バックアップ' },
   { key: 'periodLocks', label: '月次締め' },
+]
+
+const DASHBOARD_SUB_TABS = [
+  { key: 'overview', label: '概要' },
+  { key: 'storeAnalytics', label: '店舗別実績' },
+  { key: 'report', label: '決算レポート' },
 ]
 
 const PERM_FIELD_MAP = {
@@ -2582,6 +2586,7 @@ export default function App() {
   const [topTab, setTopTab] = useState('dashboard')
   const [activeTab, setActiveTab] = useState('owners')
   const [adminTab, setAdminTab] = useState('users')
+  const [dashboardTab, setDashboardTab] = useState('overview')
   const [allRecords, setAllRecords] = useState({})
   const [rentPayments, setRentPayments] = useState([])
   const [sales, setSales] = useState([])
@@ -2769,6 +2774,21 @@ export default function App() {
             </nav>
           )}
 
+          {topTab === 'dashboard' && (
+            <nav className="sidebar-subnav">
+              <div className="sidebar-subnav-label">ダッシュボード</div>
+              {DASHBOARD_SUB_TABS.map((t) => (
+                <button
+                  key={t.key}
+                  className={dashboardTab === t.key ? 'sidebar-btn sub active' : 'sidebar-btn sub'}
+                  onClick={() => setDashboardTab(t.key)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </nav>
+          )}
+
           {topTab === 'admin' && (
             <nav className="sidebar-subnav">
               <div className="sidebar-subnav-label">管理者メニュー</div>
@@ -2906,7 +2926,19 @@ export default function App() {
               user={session.user}
             />
           )}
-          {!loading && !loadError && topTab === 'storeAnalytics' && (
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'overview' && (
+            <Dashboard
+              allRecords={allRecords}
+              sales={sales}
+              expenses={expenses}
+              rentPayments={rentPayments}
+              trustFunds={trustFunds}
+              ownerSettlements={ownerSettlements}
+              repairs={repairs}
+              onNavigate={setTopTab}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'storeAnalytics' && (
             <StoreAnalytics
               allRecords={allRecords}
               managementAcquisitions={managementAcquisitions}
@@ -2914,10 +2946,7 @@ export default function App() {
               sales={sales}
             />
           )}
-          {!loading && !loadError && topTab === 'dashboard' && (
-            <Dashboard allRecords={allRecords} sales={sales} expenses={expenses} rentPayments={rentPayments} trustFunds={trustFunds} ownerSettlements={ownerSettlements} repairs={repairs} onNavigate={setTopTab} />
-          )}
-          {!loading && !loadError && topTab === 'report' && (
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'report' && (
             <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} />
           )}
           {topTab === 'admin' && profile?.is_admin && (
