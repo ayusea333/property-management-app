@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { computeStoreAnalytics } from './lib/storeAnalytics'
 import { currentMonthStr, prevMonthStr, formatMonthLabel } from './lib/rentPayments'
 import { fiscalMonths, currentFiscalStartYear, fiscalYearLabel } from './lib/period'
+import { CautionNotice } from './components/SimpleUI'
 
 function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
@@ -20,19 +21,19 @@ const PRESETS = [
 ]
 
 const SORT_COLUMNS = [
-  { key: 'newInPeriod', label: '新規獲得(期間内)' },
-  { key: 'cumulativeTotal', label: '累計獲得戸数' },
-  { key: 'endedInPeriod', label: '終了(期間内)' },
-  { key: 'netGrowth', label: '純増' },
-  { key: 'currentActiveCount', label: '現在管理中' },
-  { key: 'revenuePostedInPeriod', label: '獲得報酬合計' },
-  { key: 'avgRevenuePerUnit', label: '1戸あたり平均' },
-  { key: 'currentMonthlyBaseTotal', label: '月間管理料合計' },
-  { key: 'currentThreeLMonthlyTotal', label: '3L月間取り分' },
-  { key: 'currentGroupMonthlyTotal', label: 'グループ会社月間支払' },
+  { key: 'newInPeriod', label: '新規獲得(期間内)', render: (s) => `${s.newInPeriod}戸` },
+  { key: 'cumulativeTotal', label: '累計獲得戸数', render: (s) => `${s.cumulativeTotal}戸` },
+  { key: 'endedInPeriod', label: '終了(期間内)', render: (s) => `${s.endedInPeriod}戸` },
+  { key: 'netGrowth', label: '純増', render: (s) => `${s.netGrowth}戸` },
+  { key: 'currentActiveCount', label: '現在管理中', render: (s) => `${s.currentActiveCount}戸` },
+  { key: 'revenuePostedInPeriod', label: '獲得報酬合計', render: (s) => yen(s.revenuePostedInPeriod) },
+  { key: 'avgRevenuePerUnit', label: '1戸あたり平均', render: (s) => yen(s.avgRevenuePerUnit) },
+  { key: 'currentMonthlyBaseTotal', label: '月間管理料合計', render: (s) => yen(s.currentMonthlyBaseTotal) },
+  { key: 'currentThreeLMonthlyTotal', label: '3L月間取り分', render: (s) => yen(s.currentThreeLMonthlyTotal), simpleHidden: true },
+  { key: 'currentGroupMonthlyTotal', label: 'グループ会社月間支払', render: (s) => yen(s.currentGroupMonthlyTotal), simpleHidden: true },
 ]
 
-export default function StoreAnalytics({ allRecords, managementAcquisitions, managementAcquisitionRates, sales }) {
+export default function StoreAnalytics({ allRecords, managementAcquisitions, managementAcquisitionRates, sales, simpleUI }) {
   const referralStores = allRecords.referralStores || []
   const rooms = allRecords.rooms || []
 
@@ -90,6 +91,8 @@ export default function StoreAnalytics({ allRecords, managementAcquisitions, man
 
   const sortArrow = (key) => (sortKey === key ? (sortDir === 'desc' ? ' ▼' : ' ▲') : '')
 
+  const columns = simpleUI ? SORT_COLUMNS.filter((c) => !c.simpleHidden) : SORT_COLUMNS
+
   return (
     <div>
       <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
@@ -118,10 +121,18 @@ export default function StoreAnalytics({ allRecords, managementAcquisitions, man
         <div className="card"><div className="label">獲得報酬合計(計上済み)</div><div className="num">{yen(totals.revenuePostedInPeriod)}</div></div>
         <div className="card"><div className="label">1戸あたり平均獲得報酬</div><div className="num">{yen(totals.avgRevenuePerUnit)}</div></div>
         <div className="card"><div className="label">現在の月間管理料合計</div><div className="num">{yen(totals.currentMonthlyBaseTotal)}</div></div>
-        <div className="card"><div className="label">3L側の月間取り分</div><div className="num">{yen(totals.currentThreeLMonthlyTotal)}</div></div>
-        <div className="card"><div className="label">グループ会社への月間支払額</div><div className="num">{yen(totals.currentGroupMonthlyTotal)}</div></div>
-        <div className="card"><div className="label">紹介元 未登録・不明(参考)</div><div className="num">{unregisteredCount}戸</div></div>
+        {!simpleUI && (
+          <>
+            <div className="card"><div className="label">3L側の月間取り分</div><div className="num">{yen(totals.currentThreeLMonthlyTotal)}</div></div>
+            <div className="card"><div className="label">グループ会社への月間支払額</div><div className="num">{yen(totals.currentGroupMonthlyTotal)}</div></div>
+            <div className="card"><div className="label">紹介元 未登録・不明(参考)</div><div className="num">{unregisteredCount}戸</div></div>
+          </>
+        )}
       </div>
+
+      {simpleUI && unregisteredCount > 0 && (
+        <CautionNotice>未登録・不明:{unregisteredCount}室(正式な実績・ランキングには含まれていません)</CautionNotice>
+      )}
 
       {referralStores.length === 0 && (
         <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
@@ -134,7 +145,7 @@ export default function StoreAnalytics({ allRecords, managementAcquisitions, man
           <thead>
             <tr>
               <th>店舗</th>
-              {SORT_COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <th
                   key={c.key}
                   className="amount"
@@ -150,34 +161,20 @@ export default function StoreAnalytics({ allRecords, managementAcquisitions, man
             {sortedStores.map((s) => (
               <tr key={s.store.id}>
                 <td>{storeLabel(s.store)}</td>
-                <td className="amount">{s.newInPeriod}戸</td>
-                <td className="amount">{s.cumulativeTotal}戸</td>
-                <td className="amount">{s.endedInPeriod}戸</td>
-                <td className="amount">{s.netGrowth}戸</td>
-                <td className="amount">{s.currentActiveCount}戸</td>
-                <td className="amount">{yen(s.revenuePostedInPeriod)}</td>
-                <td className="amount">{yen(s.avgRevenuePerUnit)}</td>
-                <td className="amount">{yen(s.currentMonthlyBaseTotal)}</td>
-                <td className="amount">{yen(s.currentThreeLMonthlyTotal)}</td>
-                <td className="amount">{yen(s.currentGroupMonthlyTotal)}</td>
+                {columns.map((c) => (
+                  <td key={c.key} className="amount">{c.render(s)}</td>
+                ))}
               </tr>
             ))}
             {sortedStores.length === 0 && (
-              <tr><td colSpan={11} className="empty-row">対象の店舗がありません</td></tr>
+              <tr><td colSpan={columns.length + 1} className="empty-row">対象の店舗がありません</td></tr>
             )}
             {sortedStores.length > 0 && (
               <tr style={{ fontWeight: 'bold', background: '#f8f6f3' }}>
                 <td>合計</td>
-                <td className="amount">{totals.newInPeriod}戸</td>
-                <td className="amount">{totals.cumulativeTotal}戸</td>
-                <td className="amount">{totals.endedInPeriod}戸</td>
-                <td className="amount">{totals.netGrowth}戸</td>
-                <td className="amount">{totals.currentActiveCount}戸</td>
-                <td className="amount">{yen(totals.revenuePostedInPeriod)}</td>
-                <td className="amount">{yen(totals.avgRevenuePerUnit)}</td>
-                <td className="amount">{yen(totals.currentMonthlyBaseTotal)}</td>
-                <td className="amount">{yen(totals.currentThreeLMonthlyTotal)}</td>
-                <td className="amount">{yen(totals.currentGroupMonthlyTotal)}</td>
+                {columns.map((c) => (
+                  <td key={c.key} className="amount">{c.render(totals)}</td>
+                ))}
               </tr>
             )}
           </tbody>
