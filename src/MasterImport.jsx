@@ -303,7 +303,7 @@ function MasterCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
 
 // ---- 家賃入金実績 CSV取込 ----
 
-function RentPaymentCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
+function RentPaymentCsvImportPanel({ allRecords, rentPayments, onChanged, canEdit, user }) {
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
   const fileInputRef = useRef(null)
@@ -404,6 +404,17 @@ function RentPaymentCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
       })
       const dedupedUpsert = [...dedupedMap.values()]
 
+      // 既に入金記録がある契約者+対象月を上書きしようとしていないか確認する
+      const existingKeySet = new Set((rentPayments || []).map((p) => `${p.tenantId}|${p.targetMonth}`))
+      const overwriteCount = dedupedUpsert.filter((row) => existingKeySet.has(`${row.tenant_id}|${row.target_month}`)).length
+      if (overwriteCount > 0) {
+        const ok = window.confirm(
+          `取り込む${dedupedUpsert.length}件のうち${overwriteCount}件は、既に入金記録がある契約者・対象月と一致しています。\n` +
+          `該当する分は、このCSVの内容で上書きされます(入金日・金額などが置き換わります)。よろしいですか?`
+        )
+        if (!ok) { setResult({ ok: 0, skipped, errors: ['上書き確認でキャンセルされたため、取り込みを中止しました。'] }); return }
+      }
+
       if (dedupedUpsert.length) {
         const chunkSize = 200
         for (let i = 0; i < dedupedUpsert.length; i += chunkSize) {
@@ -431,30 +442,4 @@ function RentPaymentCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
         1行が「1件の入金記録」です。物件名・号室・契約者名から、既に登録されている契約を探して記録します(先に上の「物件・部屋・オーナー・契約者」の取込を済ませてください)。「入金日」が空欄の行は、入金の有無が確定していないとみなして取り込まず、件数だけ表示します。
       </p>
       <div className="form-actions" style={{ marginBottom: 10 }}>
-        <button className="btn-secondary" onClick={downloadTemplate}>CSVダウンロード(見本)</button>
-        {canEdit && (
-          <>
-            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
-            <button className="btn-secondary" onClick={openImport} disabled={importing}>{importing ? 'インポート中...' : 'CSVインポート'}</button>
-          </>
-        )}
-      </div>
-      {result && (
-        <div className={result.errors.length ? 'form-error' : 'mini'} style={{ whiteSpace: 'pre-line', color: result.errors.length ? undefined : '#6b6167' }}>
-          {result.ok > 0 && `${result.ok}件を取り込みました。\n`}
-          {result.skipped > 0 && `${result.skipped}件は入金日が空欄のためスキップしました。\n`}
-          {result.errors.length > 0 && `以下は取り込めませんでした:\n${result.errors.join('\n')}`}
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function MasterImportPanel({ allRecords, onChanged, canEditMaster, canEditRentPayments, user }) {
-  return (
-    <div>
-      <MasterCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditMaster} user={user} />
-      <RentPaymentCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditRentPayments} user={user} />
-    </div>
-  )
-}
+        <button className="btn-secondary" onClick={downloadTemplate}>CSVダウ
