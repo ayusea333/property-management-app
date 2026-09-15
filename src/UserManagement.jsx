@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { adminCreateUser } from './lib/adminCreateUser'
+import { adminResetPassword } from './lib/adminResetPassword'
 
 const PERM_FIELDS = [
   { key: 'can_edit_master', label: 'マスタ管理' },
@@ -24,6 +25,11 @@ export default function UserManagement({ myProfile }) {
   const [registerError, setRegisterError] = useState('')
   const [registeredResult, setRegisteredResult] = useState(null) // { email, tempPassword }
   const [copied, setCopied] = useState(false)
+
+  const [resettingId, setResettingId] = useState('')
+  const [resetError, setResetError] = useState('')
+  const [resetResults, setResetResults] = useState({}) // { [userId]: tempPassword }
+  const [copiedResetId, setCopiedResetId] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -104,6 +110,32 @@ export default function UserManagement({ myProfile }) {
     }
   }
 
+  const handleResetPassword = async (p) => {
+    if (!confirm(`${p.display_name || p.email} の仮パスワードを再発行しますか?(今までのパスワードは使えなくなります)`)) return
+    setResetError('')
+    setResettingId(p.id)
+    try {
+      const tempPassword = await adminResetPassword(p.id)
+      setResetResults((prev) => ({ ...prev, [p.id]: tempPassword }))
+      setCopiedResetId('')
+    } catch (e) {
+      setResetError(e.message)
+    } finally {
+      setResettingId('')
+    }
+  }
+
+  const copyResetPassword = async (userId) => {
+    const tempPassword = resetResults[userId]
+    if (!tempPassword) return
+    try {
+      await navigator.clipboard.writeText(tempPassword)
+      setCopiedResetId(userId)
+    } catch {
+      // クリップボードが使えない環境では、手動でコピーしてもらう
+    }
+  }
+
   if (loading) return <p>読み込み中...</p>
   if (error) return <p className="form-error">{error}</p>
 
@@ -164,6 +196,7 @@ export default function UserManagement({ myProfile }) {
         <a href="https://supabase.com/dashboard/project/lrxnwogkkfwjozsncfod/auth/users" target="_blank" rel="noreferrer"> Supabaseの管理画面(Authentication → Users)</a>
         から削除してください。
       </p>
+      {resetError && <div className="form-error">{resetError}</div>}
       <div className="tablewrap">
         <table className="master-table">
           <thead>
@@ -174,6 +207,7 @@ export default function UserManagement({ myProfile }) {
               <th className="center">経理向けシンプル表示</th>
               {PERM_FIELDS.map((f) => <th key={f.key} className="center">{f.label}</th>)}
               <th className="center">無効化</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -222,10 +256,28 @@ export default function UserManagement({ myProfile }) {
                     onChange={(e) => toggleDisabled(p, e.target.checked)}
                   />
                 </td>
+                <td>
+                  <button
+                    className="btn-secondary"
+                    onClick={() => handleResetPassword(p)}
+                    disabled={resettingId === p.id}
+                  >
+                    {resettingId === p.id ? '再発行中...' : '仮パスワード再発行'}
+                  </button>
+                  {resetResults[p.id] && (
+                    <div className="mini" style={{ marginTop: 6, color: '#6b6167' }}>
+                      新しい仮パスワード: <strong>{resetResults[p.id]}</strong>
+                      <br />
+                      <button type="button" className="btn-secondary" style={{ marginTop: 4 }} onClick={() => copyResetPassword(p.id)}>
+                        {copiedResetId === p.id ? 'コピーしました' : 'コピー'}
+                      </button>
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
             {profiles.length === 0 && (
-              <tr><td colSpan={5 + PERM_FIELDS.length} className="empty-row">アカウントがありません</td></tr>
+              <tr><td colSpan={6 + PERM_FIELDS.length} className="empty-row">アカウントがありません</td></tr>
             )}
           </tbody>
         </table>
