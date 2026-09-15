@@ -393,16 +393,30 @@ function RentPaymentCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
         }))
       })
 
-      if (toUpsert.length) {
+      // 同じ契約者+対象月の行がCSV内に複数あると、1回のupsertの中で同じ行を
+      // 二重に更新しようとしてエラーになるため、先に1件にまとめる(後の行を優先)
+      let duplicateCount = 0
+      const dedupedMap = new Map()
+      toUpsert.forEach((row) => {
+        const key = `${row.tenant_id}|${row.target_month}`
+        if (dedupedMap.has(key)) duplicateCount++
+        dedupedMap.set(key, row)
+      })
+      const dedupedUpsert = [...dedupedMap.values()]
+
+      if (dedupedUpsert.length) {
         const chunkSize = 200
-        for (let i = 0; i < toUpsert.length; i += chunkSize) {
-          const { error: err } = await supabase.from('rent_payments').upsert(toUpsert.slice(i, i + chunkSize), { onConflict: 'tenant_id,target_month' })
+        for (let i = 0; i < dedupedUpsert.length; i += chunkSize) {
+          const { error: err } = await supabase.from('rent_payments').upsert(dedupedUpsert.slice(i, i + chunkSize), { onConflict: 'tenant_id,target_month' })
           if (err) throw err
         }
         await onChanged()
-        await logEdit({ user, tableLabel: '家賃入金', action: '追加', summary: `CSVインポートで${toUpsert.length}件を取り込み` })
+        await logEdit({ user, tableLabel: '家賃入金', action: '追加', summary: `CSVインポートで${dedupedUpsert.length}件を取り込み` })
       }
-      setResult({ ok: toUpsert.length, skipped, errors })
+      if (duplicateCount > 0) {
+        errors.push(`同じ契約者・同じ対象月の行が${duplicateCount}件重複していたため、後の行を優先してまとめました。`)
+      }
+      setResult({ ok: dedupedUpsert.length, skipped, errors })
     } catch (e) {
       setResult({ ok: 0, skipped: 0, errors: ['インポートに失敗しました: ' + e.message] })
     } finally {
@@ -428,19 +442,4 @@ function RentPaymentCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
       {result && (
         <div className={result.errors.length ? 'form-error' : 'mini'} style={{ whiteSpace: 'pre-line', color: result.errors.length ? undefined : '#6b6167' }}>
           {result.ok > 0 && `${result.ok}件を取り込みました。\n`}
-          {result.skipped > 0 && `${result.skipped}件は入金日が空欄のためスキップしました。\n`}
-          {result.errors.length > 0 && `以下は取り込めませんでした:\n${result.errors.join('\n')}`}
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function MasterImportPanel({ allRecords, onChanged, canEditMaster, canEditRentPayments, user }) {
-  return (
-    <div>
-      <MasterCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditMaster} user={user} />
-      <RentPaymentCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditRentPayments} user={user} />
-    </div>
-  )
-}
+          {result.skipped > 0 && `${result.skipp
