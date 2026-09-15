@@ -133,14 +133,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border-color);
-}
-.sidebar-subnav-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin: 0 8px 6px;
+  margin: 2px 0 8px;
 }
 .sidebar-subnav-group {
   display: flex;
@@ -208,10 +201,15 @@ html, body, #root {
     position: static;
     padding: 12px;
   }
-  .sidebar-nav,
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
   .sidebar-subnav {
     flex-direction: row;
     flex-wrap: wrap;
+    width: 100%;
+    margin: 0 0 6px;
   }
   .sidebar-subnav-group {
     flex-direction: row;
@@ -222,11 +220,6 @@ html, body, #root {
   .sidebar-subnav-group-label {
     width: 100%;
     margin: 6px 4px 2px;
-  }
-  .sidebar-subnav {
-    border-top: none;
-    margin-top: 8px;
-    padding-top: 8px;
   }
   .main-area {
     padding: 16px 14px 48px;
