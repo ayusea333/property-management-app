@@ -9,6 +9,7 @@ import {
 import { saleToRow } from './lib/sales'
 import { currentMonthStr, formatMonthLabel } from './lib/rentPayments'
 import { logEdit } from './lib/editLog'
+import { DetailsToggle, CautionNotice } from './components/SimpleUI'
 
 function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
@@ -41,6 +42,7 @@ export default function ManagementAcquisitions({
   onChanged,
   canEdit,
   isAdmin,
+  simpleUI,
   user,
 }) {
   const properties = allRecords.properties || []
@@ -321,15 +323,30 @@ export default function ManagementAcquisitions({
 
   return (
     <div>
-      <div className="cards">
-        <div className="card"><div className="label">現在管理中の戸数</div><div className="num">{stats.activeCount}戸</div></div>
-        <div className="card"><div className="label">今月の新規獲得</div><div className="num">{stats.thisMonthNew}戸</div></div>
-        <div className="card"><div className="label">紹介元 未登録・不明</div><div className="num">{stats.unregistered}戸</div></div>
-      </div>
+      {simpleUI ? (
+        <div className="cards">
+          <div className="card"><div className="label">現在管理中の戸数</div><div className="num">{stats.activeCount}戸</div></div>
+          <div className="card"><div className="label">今月の新規獲得</div><div className="num">{stats.thisMonthNew}戸</div></div>
+        </div>
+      ) : (
+        <div className="cards">
+          <div className="card"><div className="label">現在管理中の戸数</div><div className="num">{stats.activeCount}戸</div></div>
+          <div className="card"><div className="label">今月の新規獲得</div><div className="num">{stats.thisMonthNew}戸</div></div>
+          <div className="card"><div className="label">紹介元 未登録・不明</div><div className="num">{stats.unregistered}戸</div></div>
+        </div>
+      )}
 
-      <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-        グループ会社の店舗などから紹介を受けて新規に管理を獲得した部屋を、部屋単位で登録します。登録時に月額の基準金額(3L取り分・グループ会社支払額)を確定し、以降は対象月にその部屋が管理中であればこの金額をそのまま自動計上します(毎月再計算はしません)。金額を変更したい場合は、変更後の対象月を指定して登録してください(過去月には影響しません)。
-      </p>
+      {simpleUI && stats.unregistered > 0 && (
+        <CautionNotice actionLabel="未登録を確認" onAction={() => setView('unregistered')}>
+          未登録・不明:{stats.unregistered}室
+        </CautionNotice>
+      )}
+
+      {!simpleUI && (
+        <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+          グループ会社の店舗などから紹介を受けて新規に管理を獲得した部屋を、部屋単位で登録します。登録時に月額の基準金額(3L取り分・グループ会社支払額)を確定し、以降は対象月にその部屋が管理中であればこの金額をそのまま自動計上します(毎月再計算はしません)。金額を変更したい場合は、変更後の対象月を指定して登録してください(過去月には影響しません)。
+        </p>
+      )}
 
       {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
 
@@ -448,6 +465,113 @@ export default function ManagementAcquisitions({
             ))}
             {unregisteredRooms.length === 0 && (
               <tr><td colSpan={4} className="empty-row">未登録の部屋はありません</td></tr>
+            )}
+          </tbody>
+        </table>
+        </div>
+      ) : simpleUI ? (
+        <div className="tablewrap">
+        <table className="master-table">
+          <thead>
+            <tr>
+              <th>物件</th><th>部屋</th><th>紹介元</th>
+              <th>開始日</th><th>終了日</th>
+              <th className="amount">月額支払額</th>
+              <th>獲得報酬</th><th>状態</th><th style={{ width: 150 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredList.map((a) => {
+              const lr = latestRate(a.id)
+              const posted = postedSaleFor(a.id)
+              const referralLabel = a.acquisitionType === 'グループ会社'
+                ? (storeLabel(a.referralStoreId) || 'グループ会社')
+                : a.acquisitionType
+              return (
+                <Fragment key={a.id}>
+                  <tr>
+                    <td>{propertyName(a.propertyId)}</td>
+                    <td>{roomLabel(a.roomId)}</td>
+                    <td>{referralLabel}{a.referralPerson ? `(${a.referralPerson})` : ''}</td>
+                    <td>{a.startDate}</td>
+                    <td>{a.endDate}</td>
+                    <td className="amount">
+                      {lr ? yen(lr.groupMonthlyAmount) : ''}
+                      {lr && (
+                        <DetailsToggle label="詳細">
+                          <div>月額基準額: {yen(lr.monthlyBaseAmount)}</div>
+                          <div>3L取り分(月額): {yen(lr.threeLMonthlyAmount)}</div>
+                          <div>3L取り分率: {lr.threeLRatePercent}%</div>
+                          <div>グループ会社支払額(月額): {yen(lr.groupMonthlyAmount)}</div>
+                        </DetailsToggle>
+                      )}
+                    </td>
+                    <td>
+                      {a.acquisitionFee > 0 ? (
+                        posted ? (
+                          <span>計上済み:{yen(posted.amount)} ✓</span>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                            <span style={{ whiteSpace: 'nowrap' }}>未計上:{yen(a.acquisitionFee)}</span>
+                            {canEdit && <button className="btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => postFeeToSales(a)} disabled={saving}>売上に計上</button>}
+                          </div>
+                        )
+                      ) : (
+                        <span className="mini" style={{ color: '#6b6167' }}>報酬なし</span>
+                      )}
+                    </td>
+                    <td>{a.endDate ? <span className="status bad">終了済み</span> : <span className="status ok">管理中</span>}</td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        {canEdit && isAdmin && !a.endDate && (
+                          <button className="btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => startRateChange(a)}>月額を変更</button>
+                        )}
+                        {canEdit && !a.endDate && (
+                          <button className="btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={() => startEnd(a)}>管理を終了する</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {rateForm && rateForm.acquisitionId === a.id && (
+                    <tr>
+                      <td colSpan={9} style={{ background: '#f8f6f3' }}>
+                        <div className="master-form" style={{ margin: '8px 0' }}>
+                          <h3>月額支払額の変更(この対象月以降に適用。過去月の金額は変わりません)</h3>
+                          <div className="form-row">
+                            <label>適用開始月</label>
+                            <input type="month" min={rateForm.minEffectiveFrom} value={rateForm.effectiveFrom} onChange={(e) => setRateForm({ ...rateForm, effectiveFrom: e.target.value })} />
+                          </div>
+                          <div className="form-row"><label>新しい月額基準額</label><input type="number" value={rateForm.monthlyBaseAmount} onChange={(e) => setRateForm({ ...rateForm, monthlyBaseAmount: Number(e.target.value) })} /></div>
+                          <div className="form-row"><label>3L取り分率(%)</label><input type="number" value={rateForm.threeLRatePercent} onChange={(e) => setRateForm({ ...rateForm, threeLRatePercent: Number(e.target.value) })} style={{ width: 100 }} /></div>
+                          {error && <div className="form-error">{error}</div>}
+                          <div className="form-actions">
+                            <button className="btn-primary" onClick={submitRateChange} disabled={saving}>{saving ? '保存中...' : '変更を保存'}</button>
+                            <button className="btn-secondary" onClick={() => setRateForm(null)}>キャンセル</button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {endingId === a.id && (
+                    <tr>
+                      <td colSpan={9} style={{ background: '#f8f6f3' }}>
+                        <div className="master-form" style={{ margin: '8px 0' }}>
+                          <h3>この部屋の管理を終了しますか?</h3>
+                          <div className="form-row"><label>終了日</label><input type="date" value={endDateInput} onChange={(e) => setEndDateInput(e.target.value)} /></div>
+                          {error && <div className="form-error">{error}</div>}
+                          <div className="form-actions">
+                            <button className="btn-primary" onClick={() => submitEnd(a)} disabled={saving}>{saving ? '処理中...' : '終了する'}</button>
+                            <button className="btn-secondary" onClick={() => setEndingId(null)}>キャンセル</button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+            {filteredList.length === 0 && (
+              <tr><td colSpan={9} className="empty-row">対象の管理獲得がありません</td></tr>
             )}
           </tbody>
         </table>
