@@ -91,6 +91,7 @@ const MASTER_CONFIGS = {
       { key: 'address', label: '住所' },
       { key: 'contact', label: '連絡先(その他)' },
       { key: 'bankInfo', label: '振込先口座情報', textarea: true },
+      { key: 'remittanceDay', label: '送金日(毎月。例: 5、10、25)', type: 'number' },
       { key: 'note', label: '備考', textarea: true },
     ],
   },
@@ -1273,10 +1274,15 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [remittanceDayFilter, setRemittanceDayFilter] = useState('')
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const owners = allRecords.owners || []
+  // オーナーマスタに設定されている「送金日」(毎月何日に送金するか)の一覧。絞り込みの選択肢に使う。
+  const remittanceDayOptions = [...new Set(
+    owners.map((o) => o.remittanceDay).filter((d) => d !== '' && d !== null && d !== undefined)
+  )].sort((a, b) => Number(a) - Number(b))
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
   const tenants = allRecords.tenants || []
@@ -1327,6 +1333,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
     .filter((row) => row.ownerProperties.length > 0)
     .filter((row) => {
       if (statusFilter && (row.settlement?.status || '未精算') !== statusFilter) return false
+      if (remittanceDayFilter && String(row.owner.remittanceDay ?? '') !== remittanceDayFilter) return false
       if (search && !row.owner.name.toLowerCase().includes(search.toLowerCase())) return false
       return true
     })
@@ -1398,6 +1405,12 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
           <option value="">すべての状態</option>
           {OWNER_SETTLEMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        {remittanceDayOptions.length > 0 && (
+          <select value={remittanceDayFilter} onChange={(e) => setRemittanceDayFilter(e.target.value)}>
+            <option value="">すべての送金日</option>
+            {remittanceDayOptions.map((d) => <option key={d} value={d}>{d}日のオーナー</option>)}
+          </select>
+        )}
         <input className="search-input" placeholder="オーナー名で検索" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
@@ -1431,7 +1444,12 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
           {rows.map((row) => (
             <Fragment key={row.owner.id}>
               <tr>
-                <td>{row.owner.name}</td>
+                <td>
+                  {row.owner.name}
+                  {row.owner.remittanceDay !== '' && row.owner.remittanceDay != null && (
+                    <span className="mini" style={{ color: '#6b6167', display: 'block' }}>送金日: {row.owner.remittanceDay}日</span>
+                  )}
+                </td>
                 {!simpleUI && (
                   <>
                     <td className="amount">{yen(row.rentCollected)}</td>
@@ -3098,67 +3116,4 @@ export default function App() {
               user={session.user}
             />
           )}
-          {!loading && !loadError && topTab === 'acquisitions' && (
-            <ManagementAcquisitions
-              allRecords={allRecords}
-              managementAcquisitions={managementAcquisitions}
-              managementAcquisitionRates={managementAcquisitionRates}
-              appSettings={appSettings}
-              sales={sales}
-              onChanged={loadAll}
-              canEdit={canEdit('acquisitions')}
-              isAdmin={!!profile?.is_admin}
-              simpleUI={!!profile?.is_simple_ui}
-              user={session.user}
-            />
-          )}
-          {!loading && !loadError && topTab === 'storeSettlements' && (
-            <StoreSettlements
-              allRecords={allRecords}
-              expenses={expenses}
-              settlements={storeSettlements}
-              onChanged={loadAll}
-              canEdit={canEdit('storeSettlements')}
-              user={session.user}
-            />
-          )}
-          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'overview' && (
-            <Dashboard
-              allRecords={allRecords}
-              sales={sales}
-              expenses={expenses}
-              rentPayments={rentPayments}
-              trustFunds={trustFunds}
-              ownerSettlements={ownerSettlements}
-              repairs={repairs}
-              managementAcquisitions={managementAcquisitions}
-              storeSettlements={storeSettlements}
-              simpleUI={!!profile?.is_simple_ui}
-              onNavigate={setTopTab}
-            />
-          )}
-          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'storeAnalytics' && (
-            <StoreAnalytics
-              allRecords={allRecords}
-              managementAcquisitions={managementAcquisitions}
-              managementAcquisitionRates={managementAcquisitionRates}
-              sales={sales}
-              simpleUI={!!profile?.is_simple_ui}
-            />
-          )}
-          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'report' && (
-            <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} simpleUI={!!profile?.is_simple_ui} />
-          )}
-          {topTab === 'admin' && profile?.is_admin && (
-            <>
-              {adminTab === 'users' && <UserManagement myProfile={profile} />}
-              {adminTab === 'history' && <EditHistory />}
-              {adminTab === 'backups' && <Backups onRestored={loadAll} />}
-              {adminTab === 'periodLocks' && <PeriodLocks user={session.user} onChanged={loadAll} />}
-            </>
-          )}
-        </main>
-      </div>
-    </div>
-  )
-}
+          {!loading && !loadError && topTab === 'ac
