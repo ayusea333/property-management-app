@@ -55,6 +55,10 @@ export default function UserManagement({ myProfile }) {
     await updateField(p.id, 'is_disabled', value)
   }
 
+  const toggleSimpleUI = async (p, value) => {
+    await updateField(p.id, 'is_simple_ui', value)
+  }
+
   const toggleAdmin = async (p, value) => {
     if (!value && p.id === myProfile?.id) {
       alert('自分自身の「管理者」は外せません(外すと誰もこの画面を開けなくなり、元に戻せなくなるためです)。')
@@ -75,6 +79,9 @@ export default function UserManagement({ myProfile }) {
         なお、自分自身の「管理者」チェックは外せません(外すと誰もこの画面を開けなくなるためです)。
       </p>
       <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+        「経理向けシンプル表示」にチェックを入れると、そのアカウントの画面が経理の日常業務向けに見やすく簡略化されます(使える機能・権限は変わりません。一覧の情報量や表示だけが変わります)。
+      </p>
+      <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
         アカウントを完全に削除したい場合(二度と使えないようにする場合)は、
         <a href="https://supabase.com/dashboard/project/lrxnwogkkfwjozsncfod/auth/users" target="_blank" rel="noreferrer"> Supabaseの管理画面(Authentication → Users)</a>
         から削除してください。
@@ -86,6 +93,7 @@ export default function UserManagement({ myProfile }) {
               <th>名前</th>
               <th>メールアドレス</th>
               <th className="center">管理者</th>
+              <th className="center">経理向けシンプル表示</th>
               {PERM_FIELDS.map((f) => <th key={f.key} className="center">{f.label}</th>)}
               <th className="center">無効化</th>
             </tr>
@@ -110,6 +118,14 @@ export default function UserManagement({ myProfile }) {
                     onChange={(e) => toggleAdmin(p, e.target.checked)}
                   />
                 </td>
+                <td className="center">
+                  <input
+                    type="checkbox"
+                    checked={!!p.is_simple_ui}
+                    disabled={savingId === p.id}
+                    onChange={(e) => toggleSimpleUI(p, e.target.checked)}
+                  />
+                </td>
                 {PERM_FIELDS.map((f) => (
                   <td key={f.key} className="center">
                     <input
@@ -131,7 +147,7 @@ export default function UserManagement({ myProfile }) {
               </tr>
             ))}
             {profiles.length === 0 && (
-              <tr><td colSpan={4 + PERM_FIELDS.length} className="empty-row">アカウントがありません</td></tr>
+              <tr><td colSpan={5 + PERM_FIELDS.length} className="empty-row">アカウントがありません</td></tr>
             )}
           </tbody>
         </table>
