@@ -442,4 +442,19 @@ function RentPaymentCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
       {result && (
         <div className={result.errors.length ? 'form-error' : 'mini'} style={{ whiteSpace: 'pre-line', color: result.errors.length ? undefined : '#6b6167' }}>
           {result.ok > 0 && `${result.ok}件を取り込みました。\n`}
-          {result.skipped > 0 && `${result.skipp
+          {result.skipped > 0 && `${result.skipped}件は入金日が空欄のためスキップしました。\n`}
+          {result.errors.length > 0 && `以下は取り込めませんでした:\n${result.errors.join('\n')}`}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function MasterImportPanel({ allRecords, onChanged, canEditMaster, canEditRentPayments, user }) {
+  return (
+    <div>
+      <MasterCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditMaster} user={user} />
+      <RentPaymentCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditRentPayments} user={user} />
+    </div>
+  )
+}
