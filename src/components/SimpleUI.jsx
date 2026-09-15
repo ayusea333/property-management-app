@@ -49,3 +49,9 @@ export function CautionNotice({ children, actionLabel, onAction }) {
   return (
     <div className="caution-notice">
       <span>⚠ {children}</span>
+      {actionLabel && onAction && (
+        <button type="button" className="btn-secondary" onClick={onAction}>{actionLabel}</button>
+      )}
+    </div>
+  )
+}
