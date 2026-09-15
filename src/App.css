@@ -133,7 +133,9 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 2px 0 8px;
+  margin: 2px 0 8px 10px;
+  padding-left: 6px;
+  border-left: 3px solid var(--brand-gold);
 }
 .sidebar-subnav-group {
   display: flex;
@@ -172,6 +174,12 @@ html, body, #root {
 .sidebar-btn.sub {
   font-size: 13px;
   padding: 8px 12px 8px 18px;
+  color: var(--text-muted);
+}
+.sidebar-btn.sub.active {
+  background: #fbf3d3;
+  color: #8a6a00;
+  font-weight: bold;
 }
 
 /* ---- 右側メインエリア ---- */
@@ -209,7 +217,8 @@ html, body, #root {
     flex-direction: row;
     flex-wrap: wrap;
     width: 100%;
-    margin: 0 0 6px;
+    margin: 4px 0 6px;
+    padding-left: 8px;
   }
   .sidebar-subnav-group {
     flex-direction: row;
