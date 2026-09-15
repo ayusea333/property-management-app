@@ -716,6 +716,22 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
     if (!payForm.date) { alert('入金日を入力してください'); return }
     if (Number(payForm.amount) < 0) { alert('入金額にマイナスの金額は入力できません'); return }
     if (isMonthLocked(periodLocks, targetMonth)) { alert(`${formatMonthLabel(targetMonth)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
+    const target = rows.find((r) => r.tenant.id === payForm.tenantId)
+    if (target?.payment) {
+      const existing = target.payment
+      const existingAmount = existing.amount ?? target.total
+      const changed = (existing.paymentDate || '') !== payForm.date
+        || Number(existingAmount) !== Number(payForm.amount)
+        || (existing.note || '') !== (payForm.note || '')
+      if (changed) {
+        const ok = window.confirm(
+          `${target.tenant.name}様の${formatMonthLabel(targetMonth)}分は、既に入金記録があります。\n` +
+          `(現在の記録: 入金日 ${existing.paymentDate || '(未設定)'} / 金額 ${Number(existingAmount).toLocaleString()}円)\n\n` +
+          `新しい内容(入金日 ${payForm.date} / 金額 ${Number(payForm.amount).toLocaleString()}円)で上書きします。よろしいですか?`
+        )
+        if (!ok) return
+      }
+    }
     setSaving(true)
     try {
       const row = rentPaymentToRow({
@@ -728,7 +744,6 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
       })
       const { error } = await supabase.from('rent_payments').upsert(row, { onConflict: 'tenant_id,target_month' })
       if (error) throw error
-      const target = rows.find((r) => r.tenant.id === payForm.tenantId)
       if (target) {
         await postManagementFeeIfNeeded({ ...target, payment: { paymentDate: payForm.date } })
         await postGroupCommissionIfNeeded({ ...target, payment: { paymentDate: payForm.date } })
@@ -753,6 +768,18 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
     if (isMonthLocked(periodLocks, targetMonth)) { alert(`${formatMonthLabel(targetMonth)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
     const date = window.prompt('入金日を YYYY-MM-DD で入力してください', new Date().toISOString().slice(0, 10))
     if (!date) return
+    const alreadyRecorded = selected
+      .map((tenantId) => rows.find((r) => r.tenant.id === tenantId))
+      .filter((r) => r && r.payment)
+    if (alreadyRecorded.length) {
+      const names = alreadyRecorded.slice(0, 5).map((r) => r.tenant.name).join('、')
+      const more = alreadyRecorded.length > 5 ? ` 他${alreadyRecorded.length - 5}名` : ''
+      const ok = window.confirm(
+        `選択した${selected.length}件のうち${alreadyRecorded.length}件(${names}${more})は、既に${formatMonthLabel(targetMonth)}分の入金記録があります。\n` +
+        `入力した入金日(${date})と各契約の家賃合計額で、既存の記録が上書きされます。よろしいですか?`
+      )
+      if (!ok) return
+    }
     setSaving(true)
     try {
       for (const tenantId of selected) {
@@ -2987,6 +3014,7 @@ export default function App() {
           {!loading && !loadError && topTab === 'master' && activeTab === 'csvImport' && (
             <MasterImportPanel
               allRecords={allRecords}
+              rentPayments={rentPayments}
               onChanged={loadAll}
               canEditMaster={canEdit('master')}
               canEditRentPayments={canEdit('rentPayments')}
