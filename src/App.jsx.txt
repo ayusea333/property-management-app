@@ -49,6 +49,7 @@ import PeriodLocks from './PeriodLocks'
 import ManagementAcquisitions from './ManagementAcquisitions'
 import StoreSettlements from './StoreSettlements'
 import StoreAnalytics from './StoreAnalytics'
+import MasterImportPanel from './MasterImport'
 import { isMonthLocked, MonthLockBadge, DetailsToggle } from './components/SimpleUI'
 import logoUrl from './assets/logo.png'
 import './App.css'
@@ -186,6 +187,9 @@ const MASTER_CONFIGS = {
       { key: 'note', label: '備考', textarea: true },
     ],
   },
+  csvImport: {
+    label: 'CSV一括取込',
+  },
 }
 
 const TABS = ['owners', 'properties', 'rooms', 'feeItems', 'residents', 'contracts', 'clients', 'vendors', 'referralStores']
@@ -195,6 +199,7 @@ const MASTER_GROUPS = [
   { label: '物件関連', keys: ['owners', 'properties', 'rooms', 'feeItems'] },
   { label: '入居関連', keys: ['residents', 'contracts'] },
   { label: '取引先関連', keys: ['clients', 'vendors', 'referralStores'] },
+  { label: 'データ取込', keys: ['csvImport'] },
 ]
 
 const PAYMENT_METHODS = ['振込', '現金', 'クレジットカード', '口座振替', 'その他']
@@ -2635,6 +2640,87 @@ const PERM_FIELD_MAP = {
   storeSettlements: 'can_edit_store_settlements',
 }
 
+// ログイン中の本人が、自分のパスワードを好きな値に変更するための小さな部品。
+// 管理者が発行する仮パスワードとは別の機能で、こちらは誰でも自分の分だけ使える。
+function ChangePasswordButton() {
+  const [open, setOpen] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState(false)
+
+  const openForm = () => {
+    setOpen(true)
+    setDone(false)
+    setError('')
+    setNewPassword('')
+    setConfirmPassword('')
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (newPassword.length < 6) { setError('パスワードは6文字以上にしてください'); return }
+    if (newPassword !== confirmPassword) { setError('確認用パスワードが一致しません'); return }
+    setSaving(true)
+    try {
+      const { error: err } = await supabase.auth.updateUser({ password: newPassword })
+      if (err) throw err
+      setDone(true)
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (e) {
+      setError('変更に失敗しました: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) {
+    return <button className="sidebar-btn" onClick={openForm}>パスワードを変更</button>
+  }
+
+  return (
+    <div className="master-form" style={{ marginTop: 8, padding: 10 }}>
+      {done ? (
+        <>
+          <p className="mini" style={{ color: '#6b6167', marginTop: 0 }}>パスワードを変更しました。</p>
+          <button className="btn-secondary" onClick={() => setOpen(false)}>閉じる</button>
+        </>
+      ) : (
+        <form onSubmit={submit}>
+          <div className="form-row">
+            <label>新しいパスワード</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          <div className="form-row">
+            <label>新しいパスワード(確認)</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="form-actions">
+            <button className="btn-primary" type="submit" disabled={saving}>{saving ? '変更中...' : '変更する'}</button>
+            <button className="btn-secondary" type="button" onClick={() => setOpen(false)}>キャンセル</button>
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -2878,6 +2964,7 @@ export default function App() {
 
         <div className="sidebar-footer">
           <div className="sidebar-user">{profile?.display_name || session.user.email}</div>
+          <ChangePasswordButton />
           <button className="sidebar-btn" onClick={handleLogout}>ログアウト</button>
         </div>
       </aside>
@@ -2890,7 +2977,16 @@ export default function App() {
         <main className="app-main">
           {loading && <p>読み込み中...</p>}
           {loadError && <p className="form-error">{loadError}</p>}
-          {!loading && !loadError && topTab === 'master' && (
+          {!loading && !loadError && topTab === 'master' && activeTab === 'csvImport' && (
+            <MasterImportPanel
+              allRecords={allRecords}
+              onChanged={loadAll}
+              canEditMaster={canEdit('master')}
+              canEditRentPayments={canEdit('rentPayments')}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'master' && activeTab !== 'csvImport' && (
             <MasterSection
               masterKey={activeTab}
               allRecords={allRecords}
