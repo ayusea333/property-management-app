@@ -442,4 +442,30 @@ function RentPaymentCsvImportPanel({ allRecords, rentPayments, onChanged, canEdi
         1行が「1件の入金記録」です。物件名・号室・契約者名から、既に登録されている契約を探して記録します(先に上の「物件・部屋・オーナー・契約者」の取込を済ませてください)。「入金日」が空欄の行は、入金の有無が確定していないとみなして取り込まず、件数だけ表示します。
       </p>
       <div className="form-actions" style={{ marginBottom: 10 }}>
-        <button className="btn-secondary" onClick={downloadTemplate}>CSVダウ
+        <button className="btn-secondary" onClick={downloadTemplate}>CSVダウンロード(見本)</button>
+        {canEdit && (
+          <>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
+            <button className="btn-secondary" onClick={openImport} disabled={importing}>{importing ? 'インポート中...' : 'CSVインポート'}</button>
+          </>
+        )}
+      </div>
+      {result && (
+        <div className={result.errors.length ? 'form-error' : 'mini'} style={{ whiteSpace: 'pre-line', color: result.errors.length ? undefined : '#6b6167' }}>
+          {result.ok > 0 && `${result.ok}件を取り込みました。\n`}
+          {result.skipped > 0 && `${result.skipped}件は入金日が空欄のためスキップしました。\n`}
+          {result.errors.length > 0 && `以下は取り込めませんでした:\n${result.errors.join('\n')}`}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function MasterImportPanel({ allRecords, rentPayments, onChanged, canEditMaster, canEditRentPayments, user }) {
+  return (
+    <div>
+      <MasterCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditMaster} user={user} />
+      <RentPaymentCsvImportPanel allRecords={allRecords} rentPayments={rentPayments} onChanged={onChanged} canEdit={canEditRentPayments} user={user} />
+    </div>
+  )
+}
