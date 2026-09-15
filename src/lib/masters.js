@@ -9,6 +9,7 @@ export const ownerFromRow = (r) => ({
   address: r.address || '',
   contact: r.contact || '',
   bankInfo: r.bank_info || '',
+  remittanceDay: r.remittance_day ?? '',
   note: r.note || '',
 })
 export const ownerToRow = (o) => ({
@@ -19,6 +20,7 @@ export const ownerToRow = (o) => ({
   address: o.address || null,
   contact: o.contact || null,
   bank_info: o.bankInfo || null,
+  remittance_day: o.remittanceDay === '' || o.remittanceDay === undefined ? null : Number(o.remittanceDay),
   note: o.note || null,
 })
 
