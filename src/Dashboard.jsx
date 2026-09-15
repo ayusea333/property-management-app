@@ -174,7 +174,8 @@ function activeContractsFor(allRecords, month) {
 
 // 「今、自分が確認すべきものは何か」を1か所にまとめて表示するパネル。
 // 新しいデータは持たず、既存の各画面のステータスを集約して見せるだけ。クリックすると該当タブに移動する。
-function PendingBox({ allRecords, rentPayments, repairs, ownerSettlements, trustFunds, onNavigate }) {
+// simpleUI(経理向けシンプル表示)のときだけ、店舗精算・新規管理獲得・未登録の3項目を追加する。
+function PendingBox({ allRecords, rentPayments, repairs, ownerSettlements, trustFunds, managementAcquisitions, storeSettlements, sales, expenses, simpleUI, onNavigate }) {
   const thisMonth = currentMonthStr()
   const contracts = activeContractsFor(allRecords, thisMonth)
   const paidIds = new Set(rentPayments.filter((p) => p.targetMonth === thisMonth).map((p) => p.tenantId))
@@ -198,18 +199,50 @@ function PendingBox({ allRecords, rentPayments, repairs, ownerSettlements, trust
     { key: 'repairs', label: `修繕管理:承認待ち ${repairsAwaiting}件`, count: repairsAwaiting },
     { key: 'ownerSettlements', label: `オーナー精算・送金:未精算 ${unsettledCount}件(${formatMonthLabel(thisMonth)}分)`, count: unsettledCount },
     { key: 'trustFunds', label: `預り金・立替金:未解消 ${trustOpenCount}件`, count: trustOpenCount },
-  ].filter((it) => it.count > 0)
+  ]
+
+  if (simpleUI) {
+    const referralStores = allRecords.referralStores || []
+    const rooms = allRecords.rooms || []
+
+    // 未処理の店舗精算(今月分。グループ会社支払が発生している店舗のうち、未精算のもの)
+    const unsettledStoreCount = referralStores.filter((store) => {
+      const groupPaymentTotal = (expenses || [])
+        .filter((e) => e.category === 'グループ会社支払' && e.payeeId === store.id && (e.date || '').slice(0, 7) === thisMonth)
+        .reduce((z, e) => z + Number(e.amount || 0), 0)
+      if (groupPaymentTotal <= 0) return false
+      const settlement = (storeSettlements || []).find((s) => s.referralStoreId === store.id && s.targetMonth === thisMonth)
+      return !settlement || settlement.status === '未精算'
+    }).length
+
+    // 未計上の新規管理報酬(獲得報酬が決まっているのに、まだ売上計上していないもの)
+    const unpostedFeeCount = (managementAcquisitions || []).filter(
+      (a) => a.acquisitionFee > 0 && !(sales || []).some((s) => s.source === 'management_acquisition' && s.sourceRef === a.id)
+    ).length
+
+    // 未登録・不明(紹介元の記録がない部屋)
+    const registeredRoomIds = new Set((managementAcquisitions || []).map((a) => a.roomId))
+    const unregisteredCount = rooms.filter((r) => !registeredRoomIds.has(r.id)).length
+
+    items.push(
+      { key: 'storeSettlements', label: `店舗精算:未処理 ${unsettledStoreCount}件(${formatMonthLabel(thisMonth)}分)`, count: unsettledStoreCount },
+      { key: 'acquisitions', label: `新規管理獲得:未計上の報酬 ${unpostedFeeCount}件`, count: unpostedFeeCount },
+      { key: 'acquisitions', label: `新規管理獲得:未登録・不明 ${unregisteredCount}室`, count: unregisteredCount },
+    )
+  }
+
+  const visibleItems = items.filter((it) => it.count > 0)
 
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
-      <h2>要確認</h2>
-      {items.length === 0 ? (
+      <h2>要確認{simpleUI ? `(${visibleItems.length}件)` : ''}</h2>
+      {visibleItems.length === 0 ? (
         <p className="mini" style={{ color: '#6b6167' }}>現在、要確認の項目はありません。</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {items.map((it) => (
+          {visibleItems.map((it, i) => (
             <button
-              key={it.key}
+              key={`${it.key}-${i}`}
               type="button"
               onClick={() => onNavigate?.(it.key)}
               className="btn-secondary"
@@ -422,7 +455,32 @@ function RepairsPanel({ allRecords, repairs }) {
   )
 }
 
-export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds, ownerSettlements, repairs, onNavigate }) {
+// 新規管理獲得の「今月の概要」を小さくまとめたパネル(経理向けシンプル表示のときだけ表示)。
+function AcquisitionsOverviewPanel({ managementAcquisitions, expenses }) {
+  const items = managementAcquisitions || []
+  if (items.length === 0) return null
+  const thisMonth = currentMonthStr()
+  const newThisMonth = items.filter((a) => (a.startDate || '').slice(0, 7) === thisMonth).length
+  const endedThisMonth = items.filter((a) => a.endDate && a.endDate.slice(0, 7) === thisMonth).length
+  const activeCount = items.filter((a) => !a.endDate).length
+  const groupPaymentThisMonth = (expenses || [])
+    .filter((e) => e.category === 'グループ会社支払' && (e.date || '').slice(0, 7) === thisMonth)
+    .reduce((z, e) => z + Number(e.amount || 0), 0)
+
+  return (
+    <div className="panel" style={{ marginBottom: 16 }}>
+      <h2>新規管理獲得(今月の概要)</h2>
+      <div className="cards">
+        <StatCard label="今月の新規管理" value={`${newThisMonth}戸`} />
+        <StatCard label="今月の管理終了" value={`${endedThisMonth}戸`} />
+        <StatCard label="現在の管理戸数" value={`${activeCount}戸`} />
+        <StatCard label="今月のグループ会社への支払額" value={yen(groupPaymentThisMonth)} />
+      </div>
+    </div>
+  )
+}
+
+export default function Dashboard({ allRecords, sales, expenses, rentPayments, trustFunds, ownerSettlements, repairs, managementAcquisitions, storeSettlements, simpleUI, onNavigate }) {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalStartYear())
   const [granularity, setGranularity] = useState('month')
 
@@ -495,8 +553,15 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments, t
         repairs={repairs}
         ownerSettlements={ownerSettlements}
         trustFunds={trustFunds}
+        managementAcquisitions={managementAcquisitions}
+        storeSettlements={storeSettlements}
+        sales={sales}
+        expenses={expenses}
+        simpleUI={simpleUI}
         onNavigate={onNavigate}
       />
+
+      {simpleUI && <AcquisitionsOverviewPanel managementAcquisitions={managementAcquisitions} expenses={expenses} />}
 
       <RentStatusPanel allRecords={allRecords} rentPayments={rentPayments} />
 
