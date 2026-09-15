@@ -478,3 +478,57 @@ select {
 .tablewrap {
   overflow-x: auto;
 }
+
+/* ---- 経理向けシンプル表示: 共通部品 ---- */
+.month-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.month-lock-badge-month {
+  font-weight: bold;
+}
+.month-lock-badge.open {
+  background: var(--status-ok-bg);
+  color: var(--status-ok-text);
+}
+.month-lock-badge.locked {
+  background: var(--status-bad-bg);
+  color: var(--status-bad-text);
+}
+.details-toggle {
+  margin: 4px 0;
+}
+.details-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--brand-primary);
+  font-size: 12px;
+  padding: 2px 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.details-toggle-body {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #f8f6f3;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.caution-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
+  border-radius: 6px;
+  font-size: 13px;
+}
