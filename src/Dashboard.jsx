@@ -235,7 +235,24 @@ function PendingBox({ allRecords, rentPayments, repairs, ownerSettlements, trust
 
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
-      <h2>要確認{simpleUI ? `(${visibleItems.length}件)` : ''}</h2>
+      <h2 style={visibleItems.length > 0 ? { display: 'flex', alignItems: 'center', gap: 8 } : undefined}>
+        要確認
+        {visibleItems.length > 0 && (
+          <span
+            style={{
+              background: 'var(--brand-red)',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 'bold',
+              borderRadius: 999,
+              padding: '2px 9px',
+              lineHeight: 1.6,
+            }}
+          >
+            {visibleItems.length}件
+          </span>
+        )}
+      </h2>
       {visibleItems.length === 0 ? (
         <p className="mini" style={{ color: '#6b6167' }}>現在、要確認の項目はありません。</p>
       ) : (
@@ -246,7 +263,7 @@ function PendingBox({ allRecords, rentPayments, repairs, ownerSettlements, trust
               type="button"
               onClick={() => onNavigate?.(it.key)}
               className="btn-secondary"
-              style={{ textAlign: 'left', width: '100%' }}
+              style={{ textAlign: 'left', width: '100%', borderLeft: '3px solid var(--brand-red)' }}
             >
               {it.label} →
             </button>
@@ -259,6 +276,7 @@ function PendingBox({ allRecords, rentPayments, repairs, ownerSettlements, trust
 
 function RentStatusPanel({ allRecords, rentPayments }) {
   const [month, setMonth] = useState(currentMonthStr())
+  const [showAll, setShowAll] = useState(false)
   const contracts = activeContractsFor(allRecords, month)
   const paidIds = new Set(
     rentPayments.filter((p) => p.targetMonth === month).map((p) => p.tenantId)
@@ -274,6 +292,13 @@ function RentStatusPanel({ allRecords, rentPayments }) {
     byProperty[key].expected += c.total
     if (paidIds.has(c.tenant.id)) byProperty[key].confirmed += c.total
   })
+  // ダッシュボードは「一目で見える」ことを優先し、未入金額が多い(=確認が必要な)物件から順に並べて、
+  // 既定では上位5件だけを表示する。全件は「すべて表示」で開閉できる(件数自体は隠さない)。
+  const rows = Object.entries(byProperty)
+    .map(([name, v]) => ({ name, ...v, unpaid: v.expected - v.confirmed }))
+    .sort((a, b) => b.unpaid - a.unpaid)
+  const visibleRows = showAll ? rows : rows.slice(0, 5)
+  const hiddenCount = rows.length - visibleRows.length
 
   return (
     <div className="panel" style={{ marginBottom: 16 }}>
@@ -292,21 +317,31 @@ function RentStatusPanel({ allRecords, rentPayments }) {
             <tr><th>物件</th><th>オーナー</th><th className="amount">入金予定</th><th className="amount">入金確認</th><th className="amount">未入金</th></tr>
           </thead>
           <tbody>
-            {Object.entries(byProperty).map(([name, v]) => (
-              <tr key={name}>
-                <td>{name}</td>
+            {visibleRows.map((v) => (
+              <tr key={v.name}>
+                <td>{v.name}</td>
                 <td>{v.owner}</td>
                 <td className="amount">{yen(v.expected)}</td>
                 <td className="amount">{yen(v.confirmed)}</td>
-                <td className="amount">{yen(v.expected - v.confirmed)}</td>
+                <td className="amount">{yen(v.unpaid)}</td>
               </tr>
             ))}
-            {Object.keys(byProperty).length === 0 && (
+            {rows.length === 0 && (
               <tr><td colSpan={5} className="empty-row">対象の契約がありません</td></tr>
             )}
           </tbody>
         </table>
       </div>
+      {hiddenCount > 0 && (
+        <button type="button" className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setShowAll(true)}>
+          他{hiddenCount}件をすべて表示
+        </button>
+      )}
+      {showAll && rows.length > 5 && (
+        <button type="button" className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setShowAll(false)}>
+          折りたたむ
+        </button>
+      )}
     </div>
   )
 }
@@ -541,12 +576,6 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments, t
         </select>
       </div>
 
-      <div className="cards">
-        <StatCard label="売上" value={yen(totalSales)} />
-        <StatCard label="支出" value={yen(totalExpenses)} />
-        <StatCard label="利益" value={yen(profit)} />
-      </div>
-
       <PendingBox
         allRecords={allRecords}
         rentPayments={rentPayments}
@@ -560,6 +589,12 @@ export default function Dashboard({ allRecords, sales, expenses, rentPayments, t
         simpleUI={simpleUI}
         onNavigate={onNavigate}
       />
+
+      <div className="cards">
+        <StatCard label="売上" value={yen(totalSales)} />
+        <StatCard label="支出" value={yen(totalExpenses)} />
+        <StatCard label="利益" value={yen(profit)} />
+      </div>
 
       {simpleUI && <AcquisitionsOverviewPanel managementAcquisitions={managementAcquisitions} expenses={expenses} />}
 
