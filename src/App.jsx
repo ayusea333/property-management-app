@@ -54,6 +54,26 @@ import { isMonthLocked, MonthLockBadge, DetailsToggle } from './components/Simpl
 import logoUrl from './assets/logo.png'
 import './App.css'
 
+// Supabaseは1回のselectで最大1000件までしか返さない仕様のため、
+// 部屋・契約・入居者・家賃入金などが1000件を超えると、何のエラーも出ないまま
+// 一部のデータだけが画面から見えなくなってしまう(CSV取込などで「見つかりません」と
+// 誤って表示される原因になる)。これを防ぐため、1000件ずつに分けて全件を取得する。
+async function fetchAllRows(table, orderCol) {
+  const pageSize = 1000
+  let all = []
+  let from = 0
+  for (;;) {
+    let q = supabase.from(table).select('*')
+    if (orderCol) q = q.order(orderCol)
+    const { data, error } = await q.range(from, from + pageSize - 1)
+    if (error) throw error
+    all = all.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
 // ---- マスタ種別ごとの設定 ----
 // fields: 一覧・フォームに表示する項目
 // relation: 他のマスタに紐づく場合の設定(親を選ぶセレクトボックスを出す)
@@ -2781,8 +2801,7 @@ export default function App() {
       const results = {}
       for (const key of TABS) {
         const config = MASTER_CONFIGS[key]
-        const { data, error } = await supabase.from(config.table).select('*').order('created_at')
-        if (error) throw error
+        const data = await fetchAllRows(config.table, 'created_at')
         results[key] = (data || []).map(config.fromRow)
       }
       // 「契約」に「入居者」の名前・連絡先を合わせて、今までどおり1人分の情報として
@@ -2795,52 +2814,40 @@ export default function App() {
       }))
       setAllRecords(results)
 
-      const { data: rpData, error: rpError } = await supabase.from('rent_payments').select('*')
-      if (rpError) throw rpError
+      const rpData = await fetchAllRows('rent_payments')
       setRentPayments((rpData || []).map(rentPaymentFromRow))
 
-      const { data: saleData, error: saleError } = await supabase.from('sales').select('*')
-      if (saleError) throw saleError
+      const saleData = await fetchAllRows('sales')
       setSales((saleData || []).map(saleFromRow))
 
-      const { data: expData, error: expError } = await supabase.from('expenses').select('*')
-      if (expError) throw expError
+      const expData = await fetchAllRows('expenses')
       setExpenses((expData || []).map(expenseFromRow))
 
-      const { data: tfData, error: tfError } = await supabase.from('trust_funds').select('*')
-      if (tfError) throw tfError
+      const tfData = await fetchAllRows('trust_funds')
       setTrustFunds((tfData || []).map(trustFundFromRow))
 
-      const { data: osData, error: osError } = await supabase.from('owner_settlements').select('*')
-      if (osError) throw osError
+      const osData = await fetchAllRows('owner_settlements')
       setOwnerSettlements((osData || []).map(ownerSettlementFromRow))
 
-      const { data: repData, error: repError } = await supabase.from('repairs').select('*')
-      if (repError) throw repError
+      const repData = await fetchAllRows('repairs')
       setRepairs((repData || []).map(repairFromRow))
 
-      const { data: bgData, error: bgError } = await supabase.from('budgets').select('*')
-      if (bgError) throw bgError
+      const bgData = await fetchAllRows('budgets')
       setBudgets((bgData || []).map(budgetFromRow))
 
-      const { data: plData, error: plError } = await supabase.from('period_locks').select('*')
-      if (plError) throw plError
+      const plData = await fetchAllRows('period_locks')
       setPeriodLocks((plData || []).map(periodLockFromRow))
 
-      const { data: maData, error: maError } = await supabase.from('management_acquisitions').select('*')
-      if (maError) throw maError
+      const maData = await fetchAllRows('management_acquisitions')
       setManagementAcquisitions((maData || []).map(managementAcquisitionFromRow))
 
-      const { data: marData, error: marError } = await supabase.from('management_acquisition_rates').select('*')
-      if (marError) throw marError
+      const marData = await fetchAllRows('management_acquisition_rates')
       setManagementAcquisitionRates((marData || []).map(acquisitionRateFromRow))
 
-      const { data: asData, error: asError } = await supabase.from('app_settings').select('*')
-      if (asError) throw asError
+      const asData = await fetchAllRows('app_settings')
       setAppSettings(Object.fromEntries((asData || []).map((r) => [r.key, r.value])))
 
-      const { data: ssData, error: ssError } = await supabase.from('store_settlements').select('*')
-      if (ssError) throw ssError
+      const ssData = await fetchAllRows('store_settlements')
       setStoreSettlements((ssData || []).map(storeSettlementFromRow))
     } catch (e) {
       setLoadError('データの読み込みに失敗しました: ' + e.message)
