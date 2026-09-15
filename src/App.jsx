@@ -49,6 +49,7 @@ import PeriodLocks from './PeriodLocks'
 import ManagementAcquisitions from './ManagementAcquisitions'
 import StoreSettlements from './StoreSettlements'
 import StoreAnalytics from './StoreAnalytics'
+import { isMonthLocked, MonthLockBadge, DetailsToggle } from './components/SimpleUI'
 import logoUrl from './assets/logo.png'
 import './App.css'
 
@@ -593,14 +594,7 @@ function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
 }
 
-// 月次締め: 指定した日付(またはtarget_month)が、締められている月かどうかを調べる
-function isMonthLocked(periodLocks, dateOrMonth) {
-  if (!dateOrMonth) return false
-  const m = dateOrMonth.length === 7 ? dateOrMonth : dateOrMonth.slice(0, 7)
-  return (periodLocks || []).some((l) => l.targetMonth === m)
-}
-
-function RentPaymentsSection({ allRecords, rentPayments, periodLocks, managementAcquisitions, managementAcquisitionRates, onChanged, canEdit, user }) {
+function RentPaymentsSection({ allRecords, rentPayments, periodLocks, managementAcquisitions, managementAcquisitionRates, onChanged, canEdit, user, simpleUI }) {
   const feeItems = allRecords.feeItems || []
   const referralStores = allRecords.referralStores || []
   const rentTableColumnCount = 13 + feeItems.length
@@ -816,9 +810,13 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
         </div>
       )}
 
-      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
-        表示中: {formatMonthLabel(targetMonth)}分
-      </div>
+      {simpleUI ? (
+        <MonthLockBadge periodLocks={periodLocks} dateOrMonth={targetMonth} />
+      ) : (
+        <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
+          表示中: {formatMonthLabel(targetMonth)}分
+        </div>
+      )}
 
       <table className="master-table">
         <thead>
@@ -1219,7 +1217,7 @@ function emptyOwnerSettlementForm() {
   }
 }
 
-function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, repairs, settlements, onChanged, canEdit, user }) {
+function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, repairs, settlements, onChanged, canEdit, user, simpleUI }) {
   const [targetMonth, setTargetMonth] = useState(currentMonthStr())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -1335,7 +1333,11 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       </div>
 
       <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-        「入金合計」「管理料」「保証家賃」「修繕費オーナー負担」「未解消の立替金等」は参考の数値です。「精算・送金額」の欄には、入金合計から管理料と今月支払い済みの修繕費オーナー負担分を差し引いた金額が自動で入りますが、あくまで下書きです。内容をご確認のうえ、必要に応じて修正してから送金する金額を確定してください(未解消の立替金等は、月をまたいで残る残高のため自動では反映されません)。「精算」(金額の確定)と「送金」(実際の振込)は別々に記録できます。
+        {simpleUI ? (
+          <>「精算・送金額」には自動で下書きの金額が入ります。内容をご確認のうえ、必要に応じて修正してから送金する金額を確定してください。内訳は各行の「詳細」から確認できます。「精算」(金額の確定)と「送金」(実際の振込)は別々に記録できます。</>
+        ) : (
+          <>「入金合計」「管理料」「保証家賃」「修繕費オーナー負担」「未解消の立替金等」は参考の数値です。「精算・送金額」の欄には、入金合計から管理料と今月支払い済みの修繕費オーナー負担分を差し引いた金額が自動で入りますが、あくまで下書きです。内容をご確認のうえ、必要に応じて修正してから送金する金額を確定してください(未解消の立替金等は、月をまたいで残る残高のため自動では反映されません)。「精算」(金額の確定)と「送金」(実際の振込)は別々に記録できます。</>
+        )}
       </div>
 
       <div className="master-toolbar">
@@ -1357,11 +1359,15 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
         <thead>
           <tr>
             <th>オーナー</th>
-            <th className="amount">入金合計(参考)</th>
-            <th className="amount">管理料(参考)</th>
-            <th className="amount">保証家賃(参考)</th>
-            <th className="amount">修繕費オーナー負担(参考)</th>
-            <th className="amount">未解消の立替金等(参考)</th>
+            {!simpleUI && (
+              <>
+                <th className="amount">入金合計(参考)</th>
+                <th className="amount">管理料(参考)</th>
+                <th className="amount">保証家賃(参考)</th>
+                <th className="amount">修繕費オーナー負担(参考)</th>
+                <th className="amount">未解消の立替金等(参考)</th>
+              </>
+            )}
             <th className="amount">精算・送金額</th>
             <th>状態</th>
             <th>精算日</th>
@@ -1374,18 +1380,33 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
             <Fragment key={row.owner.id}>
               <tr>
                 <td>{row.owner.name}</td>
-                <td className="amount">{yen(row.rentCollected)}</td>
-                <td className="amount">{yen(row.managementFee)}</td>
-                <td className="amount">{row.guaranteedRent ? yen(row.guaranteedRent) : ''}</td>
+                {!simpleUI && (
+                  <>
+                    <td className="amount">{yen(row.rentCollected)}</td>
+                    <td className="amount">{yen(row.managementFee)}</td>
+                    <td className="amount">{row.guaranteedRent ? yen(row.guaranteedRent) : ''}</td>
+                    <td className="amount">
+                      {row.repairOwnerBurden ? (
+                        <span title={row.ownerRepairs.map((r) => `${r.content}(${r.costBearer})`).join(', ')}>
+                          {yen(row.repairOwnerBurden)}
+                        </span>
+                      ) : ''}
+                    </td>
+                    <td className="amount">{row.openTrustItems.length ? yen(row.openTrustTotal) : ''}</td>
+                  </>
+                )}
                 <td className="amount">
-                  {row.repairOwnerBurden ? (
-                    <span title={row.ownerRepairs.map((r) => `${r.content}(${r.costBearer})`).join(', ')}>
-                      {yen(row.repairOwnerBurden)}
-                    </span>
-                  ) : ''}
+                  {row.settlement ? yen(row.settlement.amount) : ''}
+                  {simpleUI && (
+                    <DetailsToggle label="内訳">
+                      入金合計: {yen(row.rentCollected)}<br />
+                      管理料: {yen(row.managementFee)}<br />
+                      保証家賃: {row.guaranteedRent ? yen(row.guaranteedRent) : '¥0'}<br />
+                      修繕費オーナー負担: {row.repairOwnerBurden ? yen(row.repairOwnerBurden) : '¥0'}<br />
+                      未解消の立替金等: {row.openTrustItems.length ? yen(row.openTrustTotal) : '¥0'}
+                    </DetailsToggle>
+                  )}
                 </td>
-                <td className="amount">{row.openTrustItems.length ? yen(row.openTrustTotal) : ''}</td>
-                <td className="amount">{row.settlement ? yen(row.settlement.amount) : ''}</td>
                 <td>
                   {!row.settlement || row.settlement.status === '未精算'
                     ? <span className="status warn">未精算</span>
@@ -1401,7 +1422,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
               </tr>
               {form && form.ownerId === row.owner.id && (
                 <tr>
-                  <td colSpan={11} style={{ background: '#f8f6f3' }}>
+                  <td colSpan={simpleUI ? 6 : 11} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.owner.name}様 {formatMonthLabel(targetMonth)}分の精算・送金</h3>
                       <div className="form-row">
@@ -1438,7 +1459,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
             </Fragment>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={11} className="empty-row">対象のオーナーがいません</td></tr>
+            <tr><td colSpan={simpleUI ? 6 : 11} className="empty-row">対象のオーナーがいません</td></tr>
           )}
         </tbody>
       </table>
@@ -1835,7 +1856,7 @@ function emptySaleForm() {
   }
 }
 
-function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user }) {
+function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user, simpleUI }) {
   const [form, setForm] = useState(emptySaleForm())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -2007,6 +2028,10 @@ function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user
     if (!selected.length) { alert('コピーする行を選択してください'); return }
     const newDate = window.prompt('複製先の日付を YYYY-MM-DD で入力してください', new Date().toISOString().slice(0, 10))
     if (!newDate) return
+    if (isMonthLocked(periodLocks, newDate)) {
+      alert(`${newDate.slice(0, 7)}分は月次締め済みのため複製できません。管理者に月次締めの解除を依頼してください。`)
+      return
+    }
     setSaving(true)
     try {
       let count = 0
@@ -2033,6 +2058,7 @@ function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user
       {canEdit ? (
         <div className="master-form">
           <h3>売上入力</h3>
+          {simpleUI && <MonthLockBadge periodLocks={periodLocks} dateOrMonth={form.date} />}
           <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
             <label>物件</label>
@@ -2137,7 +2163,11 @@ function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user
 
       <table className="master-table">
         <thead>
-          <tr><th></th><th>日付</th><th>勘定科目</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
+          <tr>
+            <th></th><th>日付</th><th>勘定科目</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th>
+            {!simpleUI && (<><th className="amount">税抜金額</th><th className="amount">消費税額</th></>)}
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {filtered.map((s) => {
@@ -2151,14 +2181,20 @@ function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user
                 <td>{roomLabel(s.roomId)}</td>
                 <td>{ownerName(s.ownerId)}</td>
                 <td>{s.content}</td>
-                <td className="amount">{s.amount.toLocaleString()}</td>
-                <td className="amount">{exTax.toLocaleString()}</td>
-                <td className="amount">{tax.toLocaleString()}</td>
+                <td className="amount">
+                  {s.amount.toLocaleString()}
+                  {simpleUI && (
+                    <DetailsToggle label="内訳">
+                      税抜金額: {exTax.toLocaleString()}<br />消費税額: {tax.toLocaleString()}
+                    </DetailsToggle>
+                  )}
+                </td>
+                {!simpleUI && (<><td className="amount">{exTax.toLocaleString()}</td><td className="amount">{tax.toLocaleString()}</td></>)}
                 <td>{canEdit && s.source === 'manual' && <button className="icon-btn" onClick={() => deleteSale(s)}>🗑</button>}</td>
               </tr>
             )
           })}
-          {filtered.length === 0 && <tr><td colSpan={11} className="empty-row">データがありません</td></tr>}
+          {filtered.length === 0 && <tr><td colSpan={simpleUI ? 9 : 11} className="empty-row">データがありません</td></tr>}
         </tbody>
       </table>
     </div>
@@ -2175,7 +2211,7 @@ function emptyExpenseForm() {
   }
 }
 
-function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit, user }) {
+function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit, user, simpleUI }) {
   const [form, setForm] = useState(emptyExpenseForm())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -2351,6 +2387,10 @@ function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit
     if (!selected.length) { alert('コピーする行を選択してください'); return }
     const newDate = window.prompt('複製先の日付を YYYY-MM-DD で入力してください', new Date().toISOString().slice(0, 10))
     if (!newDate) return
+    if (isMonthLocked(periodLocks, newDate)) {
+      alert(`${newDate.slice(0, 7)}分は月次締め済みのため複製できません。管理者に月次締めの解除を依頼してください。`)
+      return
+    }
     setSaving(true)
     try {
       let count = 0
@@ -2376,6 +2416,7 @@ function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit
       {canEdit ? (
         <div className="master-form">
           <h3>経費入力</h3>
+          {simpleUI && <MonthLockBadge periodLocks={periodLocks} dateOrMonth={form.date} />}
           <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
           <div className="form-row">
             <label>物件</label>
@@ -2517,7 +2558,11 @@ function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit
 
       <table className="master-table">
         <thead>
-          <tr><th></th><th>日付</th><th>物件</th><th>号室</th><th>勘定科目</th><th>内容</th><th>支払先</th><th className="amount">金額</th><th className="amount">税抜金額</th><th className="amount">消費税額</th><th></th></tr>
+          <tr>
+            <th></th><th>日付</th><th>物件</th><th>号室</th><th>勘定科目</th><th>内容</th><th>支払先</th><th className="amount">金額</th>
+            {!simpleUI && (<><th className="amount">税抜金額</th><th className="amount">消費税額</th></>)}
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {filtered.map((e) => {
@@ -2531,14 +2576,20 @@ function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit
                 <td>{e.category}</td>
                 <td>{e.content}</td>
                 <td>{e.payee}</td>
-                <td className="amount">{e.amount.toLocaleString()}</td>
-                <td className="amount">{exTax.toLocaleString()}</td>
-                <td className="amount">{tax.toLocaleString()}</td>
+                <td className="amount">
+                  {e.amount.toLocaleString()}
+                  {simpleUI && (
+                    <DetailsToggle label="内訳">
+                      税抜金額: {exTax.toLocaleString()}<br />消費税額: {tax.toLocaleString()}
+                    </DetailsToggle>
+                  )}
+                </td>
+                {!simpleUI && (<><td className="amount">{exTax.toLocaleString()}</td><td className="amount">{tax.toLocaleString()}</td></>)}
                 <td>{canEdit && <button className="icon-btn" onClick={() => deleteExpense(e)}>🗑</button>}</td>
               </tr>
             )
           })}
-          {filtered.length === 0 && <tr><td colSpan={11} className="empty-row">データがありません</td></tr>}
+          {filtered.length === 0 && <tr><td colSpan={simpleUI ? 9 : 11} className="empty-row">データがありません</td></tr>}
         </tbody>
       </table>
     </div>
@@ -2857,6 +2908,7 @@ export default function App() {
               managementAcquisitionRates={managementAcquisitionRates}
               onChanged={loadAll}
               canEdit={canEdit('rentPayments')}
+              simpleUI={!!profile?.is_simple_ui}
               user={session.user}
             />
           )}
@@ -2867,6 +2919,7 @@ export default function App() {
               periodLocks={periodLocks}
               onChanged={loadAll}
               canEdit={canEdit('sales')}
+              simpleUI={!!profile?.is_simple_ui}
               user={session.user}
             />
           )}
@@ -2877,6 +2930,7 @@ export default function App() {
               periodLocks={periodLocks}
               onChanged={loadAll}
               canEdit={canEdit('expenses')}
+              simpleUI={!!profile?.is_simple_ui}
               user={session.user}
             />
           )}
@@ -2899,6 +2953,7 @@ export default function App() {
               settlements={ownerSettlements}
               onChanged={loadAll}
               canEdit={canEdit('ownerSettlements')}
+              simpleUI={!!profile?.is_simple_ui}
               user={session.user}
             />
           )}
@@ -2922,6 +2977,7 @@ export default function App() {
               onChanged={loadAll}
               canEdit={canEdit('acquisitions')}
               isAdmin={!!profile?.is_admin}
+              simpleUI={!!profile?.is_simple_ui}
               user={session.user}
             />
           )}
@@ -2944,6 +3000,9 @@ export default function App() {
               trustFunds={trustFunds}
               ownerSettlements={ownerSettlements}
               repairs={repairs}
+              managementAcquisitions={managementAcquisitions}
+              storeSettlements={storeSettlements}
+              simpleUI={!!profile?.is_simple_ui}
               onNavigate={setTopTab}
             />
           )}
@@ -2953,10 +3012,11 @@ export default function App() {
               managementAcquisitions={managementAcquisitions}
               managementAcquisitionRates={managementAcquisitionRates}
               sales={sales}
+              simpleUI={!!profile?.is_simple_ui}
             />
           )}
           {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'report' && (
-            <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} />
+            <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} simpleUI={!!profile?.is_simple_ui} />
           )}
           {topTab === 'admin' && profile?.is_admin && (
             <>
