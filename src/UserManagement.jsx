@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabase'
+import { adminCreateUser } from './lib/adminCreateUser'
 
 const PERM_FIELDS = [
   { key: 'can_edit_master', label: 'マスタ管理' },
@@ -16,6 +17,13 @@ export default function UserManagement({ myProfile }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingId, setSavingId] = useState('')
+
+  const [newEmail, setNewEmail] = useState('')
+  const [newName, setNewName] = useState('')
+  const [registering, setRegistering] = useState(false)
+  const [registerError, setRegisterError] = useState('')
+  const [registeredResult, setRegisteredResult] = useState(null) // { email, tempPassword }
+  const [copied, setCopied] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -67,13 +75,83 @@ export default function UserManagement({ myProfile }) {
     await updateField(p.id, 'is_admin', value)
   }
 
+  const submitRegister = async (e) => {
+    e.preventDefault()
+    setRegisterError('')
+    setRegisteredResult(null)
+    setCopied(false)
+    setRegistering(true)
+    try {
+      const tempPassword = await adminCreateUser(newEmail.trim(), newName.trim())
+      setRegisteredResult({ email: newEmail.trim(), tempPassword })
+      setNewEmail('')
+      setNewName('')
+      await load()
+    } catch (e) {
+      setRegisterError(e.message)
+    } finally {
+      setRegistering(false)
+    }
+  }
+
+  const copyTempPassword = async () => {
+    if (!registeredResult) return
+    try {
+      await navigator.clipboard.writeText(registeredResult.tempPassword)
+      setCopied(true)
+    } catch {
+      // クリップボードが使えない環境では、手動でコピーしてもらう
+    }
+  }
+
   if (loading) return <p>読み込み中...</p>
   if (error) return <p className="form-error">{error}</p>
 
   return (
     <div>
+      <div className="master-form">
+        <h3>新規ユーザー登録</h3>
+        <form onSubmit={submitRegister}>
+          <div className="form-row">
+            <label>メールアドレス</label>
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-row">
+            <label>名前(任意)</label>
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} />
+          </div>
+          {registerError && <div className="form-error">{registerError}</div>}
+          <div className="form-actions">
+            <button className="btn-primary" type="submit" disabled={registering}>
+              {registering ? '登録中...' : '登録する'}
+            </button>
+          </div>
+        </form>
+        {registeredResult && (
+          <div className="caution-notice" style={{ marginTop: 12 }}>
+            <span>
+              登録しました。仮パスワードをこの方に伝えてください(この画面を閉じると二度と表示されません):
+              <br />
+              メールアドレス: {registeredResult.email}
+              <br />
+              仮パスワード: <strong>{registeredResult.tempPassword}</strong>
+            </span>
+            <button type="button" className="btn-secondary" onClick={copyTempPassword}>
+              {copied ? 'コピーしました' : '仮パスワードをコピー'}
+            </button>
+          </div>
+        )}
+        <p className="mini" style={{ marginTop: 12, color: '#6b6167' }}>
+          登録すると、すぐにこのメールアドレスとその場で表示される仮パスワードでログインできるようになります。ログイン後、ご本人がサイドバー下部の「パスワードを変更」から好きなパスワードに変更できます。
+        </p>
+      </div>
+
       <p className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-        新しいアカウントの発行は、Supabaseの管理画面(Authentication → Users)から行ってください。
         ここでは発行済みのアカウントに、どのタブを編集できるかを設定します。「管理者」にチェックを入れると、そのアカウントは全タブ編集可能・この管理者メニューも使えるようになります。
         「無効化」にチェックを入れると、そのアカウントはすぐにログインできなくなります(データやアカウント自体は消えません。チェックを外せば元に戻せます)。
         なお、自分自身の「管理者」チェックは外せません(外すと誰もこの画面を開けなくなるためです)。
