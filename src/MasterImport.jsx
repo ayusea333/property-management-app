@@ -252,7 +252,7 @@ function MasterCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
             ownerId: ownersByName.get(row.ownerName),
             roomId: roomRef?.id,
             amount: row.deposit,
-            occurredDate: row.moveIn || null,
+            occurredDate: row.moveIn || new Date().toISOString().slice(0, 10),
             status: '保管中',
             note: `${row.residentName || ''}様 敷金(CSV取込)`,
           })
