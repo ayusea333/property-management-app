@@ -4,10 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      GitHub Pagesは独自のHTTPレスポンスヘッダーを設定できないため、CSP(不正なスクリプト実行対策)は
+      ここ(metaタグ)で設定しています。ただしmetaタグでは「他サイトのiframeに埋め込まれるのを防ぐ」
+      設定(frame-ancestors)は効かないため、その対策は下の<script>で別途行っています。
+      経費PDFの文字認識(OCR)機能が使うtesseract.js は、初回実行時にcdn.jsdelivr.netから
+      認識用データを読み込む仕組みのため、そこだけは許可しています。
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net; script-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self';" />
     <title>property-management-app</title>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // クリックジャッキング対策: このページが他サイトのiframeに埋め込まれていたら、埋め込みを解除する
+      if (window.top !== window.self) { window.top.location = window.self.location.href }
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
