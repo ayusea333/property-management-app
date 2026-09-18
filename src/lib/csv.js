@@ -1,7 +1,10 @@
 // 一覧をCSVファイルとしてダウンロード/インポートする
 
+// Excel等で開いたときに、セルの内容が数式として実行されてしまう「CSVインジェクション」を防ぐため、
+// =, +, -, @ やタブ・改行コードで始まる値の先頭に ' を付けて、常に文字列として扱われるようにする。
 function escapeCell(v) {
-  const s = String(v ?? '')
+  let s = String(v ?? '')
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
   if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"'
   return s
 }
