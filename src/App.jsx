@@ -3116,4 +3116,67 @@ export default function App() {
               user={session.user}
             />
           )}
-          {!loading && !loadError && topTab === 'ac
+          {!loading && !loadError && topTab === 'acquisitions' && (
+            <ManagementAcquisitions
+              allRecords={allRecords}
+              managementAcquisitions={managementAcquisitions}
+              managementAcquisitionRates={managementAcquisitionRates}
+              appSettings={appSettings}
+              sales={sales}
+              onChanged={loadAll}
+              canEdit={canEdit('acquisitions')}
+              isAdmin={!!profile?.is_admin}
+              simpleUI={!!profile?.is_simple_ui}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'storeSettlements' && (
+            <StoreSettlements
+              allRecords={allRecords}
+              expenses={expenses}
+              settlements={storeSettlements}
+              onChanged={loadAll}
+              canEdit={canEdit('storeSettlements')}
+              user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'overview' && (
+            <Dashboard
+              allRecords={allRecords}
+              sales={sales}
+              expenses={expenses}
+              rentPayments={rentPayments}
+              trustFunds={trustFunds}
+              ownerSettlements={ownerSettlements}
+              repairs={repairs}
+              managementAcquisitions={managementAcquisitions}
+              storeSettlements={storeSettlements}
+              simpleUI={!!profile?.is_simple_ui}
+              onNavigate={setTopTab}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'storeAnalytics' && (
+            <StoreAnalytics
+              allRecords={allRecords}
+              managementAcquisitions={managementAcquisitions}
+              managementAcquisitionRates={managementAcquisitionRates}
+              sales={sales}
+              simpleUI={!!profile?.is_simple_ui}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'report' && (
+            <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} simpleUI={!!profile?.is_simple_ui} />
+          )}
+          {topTab === 'admin' && profile?.is_admin && (
+            <>
+              {adminTab === 'users' && <UserManagement myProfile={profile} />}
+              {adminTab === 'history' && <EditHistory />}
+              {adminTab === 'backups' && <Backups onRestored={loadAll} />}
+              {adminTab === 'periodLocks' && <PeriodLocks user={session.user} onChanged={loadAll} />}
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  )
+}
