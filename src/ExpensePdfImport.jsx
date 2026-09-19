@@ -12,6 +12,9 @@ function fieldIcon(value) {
   return value ? '🟢' : '🟡'
 }
 
+// あまりに大きいPDFを選ぶと、読み取り処理(ブラウザの中だけで行う)がその人のパソコンで重くなりすぎるため、上限を設ける
+const MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024 // 20MB
+
 function escapeRegExp(s) {
   return (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -84,11 +87,18 @@ export default function ExpensePdfImportPanel({ allRecords, expenses, user, onIm
   }
 
   const handleFiles = async (e) => {
-    const files = Array.from(e.target.files || [])
+    const allFiles = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!files.length) return
+    if (!allFiles.length) return
+    const tooLarge = allFiles.filter((f) => f.size > MAX_PDF_SIZE_BYTES)
+    const files = allFiles.filter((f) => f.size <= MAX_PDF_SIZE_BYTES)
+    const sizeErrorText = tooLarge.map((f) => `${f.name}: ファイルサイズが大きすぎます(20MBまで)。読み込みをスキップしました。\n`).join('')
+    if (!files.length) {
+      if (sizeErrorText) setError(sizeErrorText)
+      return
+    }
     setParsing(true)
-    setError('')
+    setError(sizeErrorText)
     for (const file of files) {
       setParsingLabel(`${file.name} を読み取り中...`)
       try {
