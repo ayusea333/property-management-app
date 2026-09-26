@@ -3165,7 +3165,19 @@ export default function App() {
             />
           )}
           {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'report' && (
-            <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} simpleUI={!!profile?.is_simple_ui} />
+            <ReportSection
+              sales={sales}
+              expenses={expenses}
+              budgets={budgets}
+              rentPayments={rentPayments}
+              ownerSettlements={ownerSettlements}
+              allRecords={allRecords}
+              arrearsMonthsCount={arrearsMonthsCount}
+              activeTenantsFor={activeTenantsFor}
+              onChanged={loadAll}
+              isAdmin={!!profile?.is_admin}
+              simpleUI={!!profile?.is_simple_ui}
+            />
           )}
           {topTab === 'admin' && profile?.is_admin && (
             <>
