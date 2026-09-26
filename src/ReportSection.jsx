@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabase'
 import { currentFiscalStartYear, fiscalPeriodFullLabel } from './lib/period'
-import { computeFiscalReport, computeYoy, exportFiscalReportXlsx } from './lib/report'
+import { computeFiscalReport, computeFiscalExtras, computeYoy, exportFiscalReportXlsx } from './lib/report'
 import { SALES_CATEGORIES } from './lib/sales'
+import { formatMonthLabel } from './lib/rentPayments'
 import { DetailsToggle } from './components/SimpleUI'
 
 function yen(n) {
@@ -21,7 +22,7 @@ function periodYearOptions() {
   return arr
 }
 
-export default function ReportSection({ sales, expenses, budgets, onChanged, isAdmin, simpleUI }) {
+export default function ReportSection({ sales, expenses, budgets, rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor, onChanged, isAdmin, simpleUI }) {
   const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
@@ -39,6 +40,7 @@ export default function ReportSection({ sales, expenses, budgets, onChanged, isA
   const report = computeFiscalReport(periodYear, sales, expenses)
   const prevReport = computeFiscalReport(periodYear - 1, sales, expenses)
   const yoy = computeYoy(report, prevReport)
+  const extras = computeFiscalExtras(report.months, { rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor })
 
   const budgetFor = (kind, category) =>
     (budgets || []).find((b) => b.fiscalYearStart === periodYear && b.kind === kind && b.category === category)
@@ -131,6 +133,22 @@ export default function ReportSection({ sales, expenses, budgets, onChanged, isA
           <div className="num">{yoy ? percent(yoy.rate) : '前期データなし'}</div>
         </div>
       </div>
+
+      <div className="cards">
+        <div className="card"><div className="label">入金合計(家賃)</div><div className="num">{yen(extras.rentCollectedTotal)}</div></div>
+        <div className="card"><div className="label">オーナー送金合計</div><div className="num">{yen(extras.ownerRemittedTotal)}</div></div>
+        <div className="card">
+          <div className="label">
+            未納{extras.arrearsAvailable ? `(${formatMonthLabel(extras.arrearsBaseMonth)}時点)` : ''}
+          </div>
+          <div className="num">
+            {extras.arrearsAvailable ? `${extras.arrearsCount}件 / ${yen(extras.arrearsAmount)}` : '算出不可(期が未到来)'}
+          </div>
+        </div>
+      </div>
+      <p className="mini" style={{ color: '#6b6167', marginTop: -8 }}>
+        「入金合計」「オーナー送金合計」は、この期の12か月分の実績を合計した数値です。「未納」は積み上げの数値ではなく、家賃入金画面と同じ判定方法で、直近の月時点でどれだけ滞っているかを表しています。管理戸数・空室率などは、現在のデータだけでは正確に算出できないため表示していません。
+      </p>
 
       <div className="master-toolbar" style={{ marginTop: 24, alignItems: 'center' }}>
         <h3 style={{ margin: 0 }}>項目別売上構成・予算比較</h3>
