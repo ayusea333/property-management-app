@@ -114,6 +114,52 @@ export function computeYoy(current, previous) {
   return { diff, rate, prevTotalSales: previous.totalSales, prevGrossProfit: previous.grossProfit }
 }
 
+// 期単位の経営状況として追加で表示する項目(入金合計・オーナー送金合計・未納)。
+// 売上・経費(sales/expenses)以外のテーブルから、既存の集計・判定ロジックをそのまま流用して算出する。
+// 「未納」は月ごとに積み上がる性質のものではなく「今どれだけ滞っているか」を表す数値なので、
+// 期の中で今日時点までに到来した直近の月(期が終わっていれば期の最終月)を基準に算出する。
+export function computeFiscalExtras(months, { rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor }) {
+  const rentCollectedTotal = (rentPayments || [])
+    .filter((p) => months.includes(p.targetMonth))
+    .reduce((z, p) => z + Number(p.amount || 0), 0)
+
+  const ownerRemittedTotal = (ownerSettlements || [])
+    .filter((s) => months.includes(s.targetMonth) && s.status === '送金済')
+    .reduce((z, s) => z + Number(s.amount || 0), 0)
+
+  // 未納の基準月: 今日が含まれる月がこの期の中にあればその月、期が既に終わっていれば期の最終月、
+  // 期がまだ始まっていなければ未納は計算しない(算出不可)。
+  const today = new Date()
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+  let arrearsBaseMonth = null
+  if (months.includes(currentMonth)) arrearsBaseMonth = currentMonth
+  else if (currentMonth > months[months.length - 1]) arrearsBaseMonth = months[months.length - 1]
+
+  let arrearsCount = 0
+  let arrearsAmount = 0
+  let arrearsAvailable = false
+  if (arrearsBaseMonth) {
+    arrearsAvailable = true
+    const rows = activeTenantsFor(allRecords, arrearsBaseMonth)
+    rows.forEach((row) => {
+      const months2 = arrearsMonthsCount(row.tenant, rentPayments, arrearsBaseMonth)
+      if (months2 >= 1) {
+        arrearsCount++
+        arrearsAmount += row.total * months2
+      }
+    })
+  }
+
+  return {
+    rentCollectedTotal,
+    ownerRemittedTotal,
+    arrearsAvailable,
+    arrearsBaseMonth,
+    arrearsCount,
+    arrearsAmount,
+  }
+}
+
 // ---- ここからExcel出力(見やすいレイアウト・配色つき) ----
 
 const YEN_FMT = '#,##0"円"'
