@@ -39,6 +39,7 @@ import { storeSettlementFromRow } from './lib/storeSettlements'
 import { logEdit } from './lib/editLog'
 import { downloadCsv, parseCsv } from './lib/csv'
 import Dashboard from './Dashboard'
+import TransactionsSection from './TransactionsSection'
 import Login from './Login'
 import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
@@ -2689,6 +2690,7 @@ const ADMIN_SUB_TABS = [
 
 const DASHBOARD_SUB_TABS = [
   { key: 'overview', label: '概要' },
+  { key: 'transactions', label: '取引管理' },
   { key: 'storeAnalytics', label: '店舗別実績' },
   { key: 'report', label: '決算レポート' },
 ]
@@ -3153,6 +3155,13 @@ export default function App() {
               storeSettlements={storeSettlements}
               simpleUI={!!profile?.is_simple_ui}
               onNavigate={setTopTab}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'transactions' && (
+            <TransactionsSection
+              sales={sales}
+              expenses={expenses}
+              allRecords={allRecords}
             />
           )}
           {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'storeAnalytics' && (
