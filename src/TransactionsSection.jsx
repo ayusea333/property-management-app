@@ -883,7 +883,7 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
           {!simpleUI && <td>{m.depositAccount}</td>}
           {!simpleUI && <td>{m.otherDate}</td>}
           {!simpleUI && <td className="amount">{m.trustAmount ? Number(m.trustAmount).toLocaleString() : ''}</td>}
-          <td className="amount">
+          <td className="amount" onClick={simpleUI ? (e) => e.stopPropagation() : undefined}>
             {m.amount.toLocaleString()}
             {simpleUI && (
               <DetailsToggle label="内訳">
