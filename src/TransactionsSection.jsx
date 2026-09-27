@@ -111,6 +111,199 @@ function SearchableSelect({ value, onChange, options, placeholder }) {
   )
 }
 
+// 取引入力フォームの各項目。新規追加フォームと、一覧行クリックで開く編集フォームの両方で共有する。
+function TransactionFormFields({ formKind, values, setValues, submitAttempted, properties, rooms, contractOptions, payeeOptions, depositAccountOptions, onPayeeChange, onCounterpartyChange }) {
+  const payeeListId = useId()
+  const counterpartyListId = useId()
+  const depositAccountListId = useId()
+  const roomOptions = rooms.filter((r) => r.propertyId === values.propertyId)
+  return (
+    <>
+      <div className={fieldClass(submitAttempted, !values.date)}><label>日付<span className="required">*</span></label><input type="date" value={values.date} onChange={(e) => setValues({ ...values, date: e.target.value })} /></div>
+      <div className="form-row">
+        <label>物件</label>
+        <SearchableSelect
+          value={values.propertyId}
+          onChange={(id) => setValues({ ...values, propertyId: id, roomId: '' })}
+          options={properties.map((p) => ({ id: p.id, label: p.name }))}
+        />
+      </div>
+      {values.propertyId && (
+        <div className="form-row">
+          <label>号室</label>
+          <SearchableSelect
+            value={values.roomId}
+            onChange={(id) => setValues({ ...values, roomId: id })}
+            options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
+          />
+        </div>
+      )}
+      <div className="form-row">
+        <label>案件(契約)</label>
+        <div>
+          <SearchableSelect
+            value={values.contractId}
+            onChange={(id) => setValues({ ...values, contractId: id })}
+            options={contractOptions}
+            placeholder="物件・号室・入居者名で検索、または空欄のまま"
+          />
+          <div className="mini" style={{ color: '#6b6167' }}>
+            AD・付帯・契約手数料など、1つの案件に紐づく取引の場合に選択してください。管理料のように毎月発生する取引は空欄のままでOKです。
+          </div>
+        </div>
+      </div>
+      <div className="form-row">
+        <label>勘定科目</label>
+        <select value={values.category} onChange={(e) => setValues({ ...values, category: e.target.value })}>
+          {formKind === 'expenses' && <option value="">(未選択)</option>}
+          {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      <div className="form-row"><label>内容</label><input value={values.content} onChange={(e) => setValues({ ...values, content: e.target.value })} placeholder={formKind === 'expenses' ? '例: 日常清掃 外注費' : ''} /></div>
+      {formKind === 'sales' && (
+        <div className="form-row">
+          <label>取引先名</label>
+          <div>
+            <input
+              list={counterpartyListId}
+              value={values.counterparty}
+              onChange={(e) => onCounterpartyChange(e.target.value)}
+              autoComplete="off"
+              placeholder="取引先マスタから入力して検索、または自由入力"
+            />
+            <datalist id={counterpartyListId}>
+              {payeeOptions.map((o) => <option key={`${o.type}-${o.id}`} value={o.label} />)}
+            </datalist>
+            {values.counterpartyId && <div className="mini" style={{ color: '#6b6167' }}>{values.counterpartyType === 'vendor' ? '業者' : '取引先'}マスタとリンクしています</div>}
+          </div>
+        </div>
+      )}
+      {formKind === 'sales' && (
+        <div className="form-row">
+          <label>入金者名or相殺</label>
+          <input value={values.payerName} onChange={(e) => setValues({ ...values, payerName: e.target.value })} placeholder="実際の振込名義や「相殺」など" />
+        </div>
+      )}
+      {formKind === 'sales' && (
+        <div className="form-row">
+          <label>入金口座</label>
+          <input
+            list={depositAccountListId}
+            value={values.depositAccount}
+            onChange={(e) => setValues({ ...values, depositAccount: e.target.value })}
+            autoComplete="off"
+            placeholder="過去の入力履歴から選択、または自由入力"
+          />
+          <datalist id={depositAccountListId}>
+            {depositAccountOptions.map((a) => <option key={a} value={a} />)}
+          </datalist>
+        </div>
+      )}
+      {formKind === 'expenses' && (
+        <div className="form-row">
+          <label>支払先</label>
+          <div>
+            <input
+              list={payeeListId}
+              value={values.payee}
+              onChange={(e) => onPayeeChange(e.target.value)}
+              autoComplete="off"
+              placeholder="業者・取引先マスタから入力して検索、または自由入力"
+            />
+            <datalist id={payeeListId}>
+              {payeeOptions.map((o) => <option key={`${o.type}-${o.id}`} value={o.label} />)}
+            </datalist>
+            {values.payeeId && <div className="mini" style={{ color: '#6b6167' }}>{values.payeeType === 'vendor' ? '業者' : '取引先'}マスタとリンクしています</div>}
+          </div>
+        </div>
+      )}
+      <div className={fieldClass(submitAttempted, !values.amount)}><label>金額{formKind === 'sales' ? '(予約売上)' : ''}<span className="required">*</span></label><input type="number" value={values.amount} onChange={(e) => setValues({ ...values, amount: e.target.value })} /></div>
+      {formKind === 'sales' && values.category === 'レントスペース' && (
+        <div className="form-row">
+          <label>実際の入金額</label>
+          <div>
+            <input type="number" value={values.depositAmount} onChange={(e) => setValues({ ...values, depositAmount: e.target.value })} style={{ width: 120 }} />
+            <div className="mini" style={{ color: '#6b6167' }}>予約サイトからの実際の振込額。金額(予約売上)より少ない場合、差額を「サイト・決済手数料」として経費に自動登録します。分からない場合は空欄でOK。</div>
+          </div>
+        </div>
+      )}
+      {formKind === 'sales' && (
+        <div className="form-row">
+          <label>預り金</label>
+          <div>
+            <input type="number" value={values.trustAmount} onChange={(e) => setValues({ ...values, trustAmount: e.target.value })} placeholder="0" style={{ width: 120 }} />
+            <div className="mini" style={{ color: '#6b6167' }}>敷金・保証金・オーナー預り金など、預かっているお金がある場合に入力してください。保存すると「預り金・立替金」にも自動で記録されます(二重入力は不要です)。</div>
+          </div>
+        </div>
+      )}
+      {formKind === 'expenses' && (
+        <div className="form-row">
+          <label>預り金送金金額</label>
+          <div>
+            <input type="number" value={values.trustRemitAmount} onChange={(e) => setValues({ ...values, trustRemitAmount: e.target.value })} placeholder="0" style={{ width: 120 }} />
+            <div className="mini" style={{ color: '#6b6167' }}>預かっていたお金を送金・精算した場合の金額(参考記録用)。対応する「預り金・立替金」の記録は、そちらの画面で状態を更新してください。</div>
+          </div>
+        </div>
+      )}
+      <div className="form-row">
+        <label>消費税区分</label>
+        <select value={values.taxType} onChange={(e) => setValues({ ...values, taxType: e.target.value })}>
+          {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+      <div className="form-row">
+        <label>支払方法</label>
+        <select value={values.paymentMethod} onChange={(e) => setValues({ ...values, paymentMethod: e.target.value })}>
+          <option value="">(未選択)</option>
+          {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
+      {formKind === 'sales' ? (
+        <div className="form-row">
+          <label>実際の入金日</label>
+          <div>
+            <input type="date" value={values.receivedDate} onChange={(e) => setValues({ ...values, receivedDate: e.target.value })} />
+            <div className="mini" style={{ color: '#6b6167' }}>計上日と実際の入金日がずれる場合のみ入力(空欄なら計上日と同じ扱い)。</div>
+          </div>
+        </div>
+      ) : (
+        <div className="form-row">
+          <label>実際の支払日</label>
+          <input type="date" value={values.paidDate} onChange={(e) => setValues({ ...values, paidDate: e.target.value })} />
+        </div>
+      )}
+      {formKind === 'expenses' && (
+        <>
+          <div className="form-row">
+            <label>領収書等の保管</label>
+            <input
+              type="checkbox"
+              style={{ width: 18, height: 18 }}
+              checked={values.hasReceipt}
+              onChange={(e) => setValues({ ...values, hasReceipt: e.target.checked })}
+            />
+          </div>
+          <div className="form-row">
+            <label>資本的支出に該当</label>
+            <div>
+              <input
+                type="checkbox"
+                style={{ width: 18, height: 18 }}
+                checked={values.isCapitalExpenditure}
+                onChange={(e) => setValues({ ...values, isCapitalExpenditure: e.target.checked })}
+              />
+              <div className="mini" style={{ color: '#6b6167' }}>
+                修繕費ではなく、資産計上して数年に分けて経費化すべき支出(大規模修繕・改良工事など)の場合にチェックしてください
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+      <div className="form-row"><label>備考</label><input value={values.note} onChange={(e) => setValues({ ...values, note: e.target.value })} /></div>
+    </>
+  )
+}
+
 export default function TransactionsSection({ sales, expenses, allRecords, periodLocks, onChanged, canEditSales, canEditExpenses, user, simpleUI }) {
   const canEditAny = canEditSales || canEditExpenses
   const [formKind, setFormKind] = useState(canEditSales ? 'sales' : 'expenses')
@@ -126,14 +319,20 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
   const [selected, setSelected] = useState([])
   const [groupMode, setGroupMode] = useState('chronological') // chronological=時系列順 / grouped=勘定科目でまとめる
   const [submitAttempted, setSubmitAttempted] = useState(false)
+  const [formCollapsed, setFormCollapsed] = useState(false)
 
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [showPdfImport, setShowPdfImport] = useState(false)
   const fileInputRef = useRef(null)
-  const payeeListId = useId()
-  const counterpartyListId = useId()
-  const depositAccountListId = useId()
+
+  // ---- 一覧の行クリックで開く「取引を編集」フォーム ----
+  const [editingKey, setEditingKey] = useState('')
+  const [editKind, setEditKind] = useState('sales')
+  const [editForm, setEditForm] = useState(null)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [editSubmitAttempted, setEditSubmitAttempted] = useState(false)
 
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
@@ -145,7 +344,6 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
     ...clients.map((c) => ({ id: c.id, type: 'client', label: c.name })),
   ]
   const contractOptions = tenants.map((t) => ({ id: t.id, label: contractLabel(t, properties, rooms) }))
-  const roomOptions = rooms.filter((r) => r.propertyId === form.propertyId)
   const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
   const roomLabel = (id) => rooms.find((r) => r.id === id)?.roomNumber || ''
   // 「入金口座」は新しいマスタを作らず、過去に入力された値から選べるようにする(おすすめされた方式)
@@ -306,6 +504,125 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
   const handleCounterpartyChange = (text) => {
     const match = payeeOptions.find((o) => o.label === text)
     setForm({ ...form, counterparty: text, counterpartyId: match?.id || '', counterpartyType: match?.type || '' })
+  }
+
+  // ---- 一覧の行クリックで既存の取引を編集(追記だけでなく全項目を後から直せる) ----
+
+  const closeEditRow = () => {
+    setEditingKey('')
+    setEditForm(null)
+    setEditError('')
+    setEditSubmitAttempted(false)
+  }
+
+  const openEditRow = (m) => {
+    const canEditThis = m.kind === 'sales' ? canEditSales : canEditExpenses
+    const canEditRow = canEditThis && (m.kind === 'expenses' || m.source === 'manual')
+    if (!canEditRow) return
+    if (editingKey === m.id) { closeEditRow(); return }
+    if (m.kind === 'sales') {
+      const s = sales.find((x) => x.id === m.rawId)
+      if (!s) return
+      setEditKind('sales')
+      setEditForm({ ...emptyTransactionForm('sales'), ...s })
+    } else {
+      const e = expenses.find((x) => x.id === m.rawId)
+      if (!e) return
+      setEditKind('expenses')
+      setEditForm({ ...emptyTransactionForm('expenses'), ...e })
+    }
+    setEditingKey(m.id)
+    setEditError('')
+    setEditSubmitAttempted(false)
+  }
+
+  const handleEditPayeeChange = (text) => {
+    const match = payeeOptions.find((o) => o.label === text)
+    const payeeId = match?.id || ''
+    const payeeType = match?.type || ''
+    let category = editForm.category
+    if (!category) {
+      const past = expenses
+        .filter((e) => (payeeId ? e.payeeId === payeeId : e.payee === text))
+        .sort((a, b) => (a.date < b.date ? 1 : -1))
+      if (past.length) category = past[0].category || ''
+    }
+    setEditForm({ ...editForm, payee: text, payeeId, payeeType, category })
+  }
+
+  const handleEditCounterpartyChange = (text) => {
+    const match = payeeOptions.find((o) => o.label === text)
+    setEditForm({ ...editForm, counterparty: text, counterpartyId: match?.id || '', counterpartyType: match?.type || '' })
+  }
+
+  const saveEditItem = async () => {
+    setEditSubmitAttempted(true)
+    if (!editForm.date || !editForm.amount) { setEditError('日付と金額は必須です'); return }
+    if (Number(editForm.amount) < 0) { setEditError('金額にマイナスの金額は入力できません'); return }
+    if (isMonthLocked(periodLocks, editForm.date)) { setEditError(`${editForm.date.slice(0, 7)}分は月次締め済みのため更新できません。管理者に月次締めの解除を依頼してください。`); return }
+    setEditSaving(true)
+    setEditError('')
+    try {
+      const rawId = editForm.id
+      if (editKind === 'sales') {
+        const property = properties.find((p) => p.id === editForm.propertyId)
+        const row = saleToRow({ ...editForm, ownerId: property?.ownerId || editForm.ownerId || '' })
+        const { error: err } = await supabase.from('sales').update(row).eq('id', rawId)
+        if (err) throw err
+
+        // 預り金の連携記録を整合させる。ただし「預り金・立替金」側で既に解消済み(保管中以外)の記録は、
+        // 過去の対応履歴を守るためあえて上書き・削除しない。
+        const { data: existingTf } = await supabase
+          .from('trust_funds')
+          .select('id, status')
+          .eq('source', 'transaction')
+          .eq('source_ref', `sale:${rawId}`)
+          .maybeSingle()
+
+        const newTrustAmount = Number(editForm.trustAmount) || 0
+        if (newTrustAmount > 0) {
+          if (!existingTf) {
+            const { error: tfErr } = await supabase.from('trust_funds').insert(trustFundToRow({
+              type: 'オーナー預り金',
+              direction: '預り金',
+              ownerId: property?.ownerId || '',
+              roomId: editForm.roomId,
+              amount: newTrustAmount,
+              occurredDate: editForm.date,
+              status: '保管中',
+              note: `取引管理(${editForm.category || '売上'})から自動作成`,
+              source: 'transaction',
+              sourceRef: `sale:${rawId}`,
+            }))
+            if (tfErr) throw tfErr
+          } else if (existingTf.status === '保管中') {
+            const { error: tfErr } = await supabase.from('trust_funds').update({
+              amount: newTrustAmount,
+              occurred_date: editForm.date,
+              room_id: editForm.roomId || null,
+              owner_id: property?.ownerId || null,
+            }).eq('id', existingTf.id)
+            if (tfErr) throw tfErr
+          }
+        } else if (existingTf && existingTf.status === '保管中') {
+          const { error: tfErr } = await supabase.from('trust_funds').delete().eq('id', existingTf.id)
+          if (tfErr) throw tfErr
+        }
+
+        await onChanged()
+        await logEdit({ user, tableLabel: '売上', action: '編集', summary: `${editForm.category} ${editForm.content || ''} ${yen(editForm.amount)}` })
+      } else {
+        const { error: err } = await supabase.from('expenses').update(expenseToRow(editForm)).eq('id', rawId)
+        if (err) throw err
+        await onChanged()
+        await logEdit({ user, tableLabel: '経費', action: '編集', summary: `${editForm.category || ''} ${editForm.content || ''} ${yen(editForm.amount)}` })
+      }
+      closeEditRow()
+    } catch (e) {
+      setEditError('更新に失敗しました: ' + e.message)
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   const submit = async () => {
@@ -543,43 +860,79 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
     const { exTax, tax } = taxBreakdown(m.amount, m.taxType)
     const canEditThis = m.kind === 'sales' ? canEditSales : canEditExpenses
     const canDeleteThis = canEditThis && (m.kind === 'expenses' || m.source === 'manual')
+    const canEditRow = canDeleteThis // 自動計上(管理料など)は編集対象外。削除できるものだけ編集も可能。
     const counterpartyOrPayee = m.kind === 'sales' ? m.counterparty : m.payee
+    const isEditing = editingKey === m.id
     return (
-      <tr key={m.id}>
-        <td>{canEditThis && <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggleSelect(m.id)} />}</td>
-        <td>{m.date}</td>
-        <td><span className={m.kind === 'sales' ? 'status ok' : 'status bad'}>{m.kind === 'sales' ? '売上' : '経費'}</span></td>
-        <td>{m.category}{m.kind === 'sales' && m.source !== 'manual' && <span className="mini"> (自動)</span>}</td>
-        <td>{propertyName(m.propertyId)}</td>
-        <td>{roomLabel(m.roomId)}</td>
-        {!simpleUI && <td>{counterpartyOrPayee}</td>}
-        <td>{m.content}{simpleUI && m.kind === 'expenses' && m.payee ? ` / ${m.payee}` : ''}</td>
-        {!simpleUI && <td>{m.payerName}</td>}
-        {!simpleUI && <td>{m.depositAccount}</td>}
-        {!simpleUI && <td>{m.otherDate}</td>}
-        {!simpleUI && <td className="amount">{m.trustAmount ? Number(m.trustAmount).toLocaleString() : ''}</td>}
-        <td className="amount">
-          {m.amount.toLocaleString()}
-          {simpleUI && (
-            <DetailsToggle label="内訳">
-              {counterpartyOrPayee && <>取引先/支払先: {counterpartyOrPayee}<br /></>}
-              {m.payerName && <>入金者名等: {m.payerName}<br /></>}
-              {m.depositAccount && <>入金口座: {m.depositAccount}<br /></>}
-              {m.otherDate && <>入金日・支払日: {m.otherDate}<br /></>}
-              {m.trustAmount ? <>預り金: {Number(m.trustAmount).toLocaleString()}<br /></> : null}
-              {m.trustRemitAmount ? <>預り金送金金額: {Number(m.trustRemitAmount).toLocaleString()}<br /></> : null}
-              {m.note && <>備考: {m.note}<br /></>}
-              差引小計(累計): {(balanceMap[m.id] ?? 0).toLocaleString()}<br />
-              税抜金額: {exTax.toLocaleString()}<br />消費税額: {tax.toLocaleString()}
-            </DetailsToggle>
-          )}
-        </td>
-        {!simpleUI && <td className="amount">{m.trustRemitAmount ? Number(m.trustRemitAmount).toLocaleString() : ''}</td>}
-        <td className="amount">{(balanceMap[m.id] ?? 0).toLocaleString()}</td>
-        {!simpleUI && <td>{m.note}</td>}
-        {!simpleUI && (<><td className="amount">{exTax.toLocaleString()}</td><td className="amount">{tax.toLocaleString()}</td></>)}
-        <td>{canDeleteThis && <button className="icon-btn" onClick={() => deleteItem(m)}>🗑</button>}</td>
-      </tr>
+      <Fragment key={m.id}>
+        <tr
+          onClick={canEditRow ? () => openEditRow(m) : undefined}
+          className={isEditing ? 'row-editing' : undefined}
+          style={canEditRow ? { cursor: 'pointer' } : undefined}
+          title={canEditRow ? 'クリックして編集' : undefined}
+        >
+          <td onClick={(e) => e.stopPropagation()}>{canEditThis && <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggleSelect(m.id)} />}</td>
+          <td>{m.date}</td>
+          <td><span className={m.kind === 'sales' ? 'status ok' : 'status bad'}>{m.kind === 'sales' ? '売上' : '経費'}</span></td>
+          <td>{m.category}{m.kind === 'sales' && m.source !== 'manual' && <span className="mini"> (自動)</span>}</td>
+          <td>{propertyName(m.propertyId)}</td>
+          <td>{roomLabel(m.roomId)}</td>
+          {!simpleUI && <td>{counterpartyOrPayee}</td>}
+          <td>{m.content}{simpleUI && m.kind === 'expenses' && m.payee ? ` / ${m.payee}` : ''}</td>
+          {!simpleUI && <td>{m.payerName}</td>}
+          {!simpleUI && <td>{m.depositAccount}</td>}
+          {!simpleUI && <td>{m.otherDate}</td>}
+          {!simpleUI && <td className="amount">{m.trustAmount ? Number(m.trustAmount).toLocaleString() : ''}</td>}
+          <td className="amount">
+            {m.amount.toLocaleString()}
+            {simpleUI && (
+              <DetailsToggle label="内訳">
+                {counterpartyOrPayee && <>取引先/支払先: {counterpartyOrPayee}<br /></>}
+                {m.payerName && <>入金者名等: {m.payerName}<br /></>}
+                {m.depositAccount && <>入金口座: {m.depositAccount}<br /></>}
+                {m.otherDate && <>入金日・支払日: {m.otherDate}<br /></>}
+                {m.trustAmount ? <>預り金: {Number(m.trustAmount).toLocaleString()}<br /></> : null}
+                {m.trustRemitAmount ? <>預り金送金金額: {Number(m.trustRemitAmount).toLocaleString()}<br /></> : null}
+                {m.note && <>備考: {m.note}<br /></>}
+                差引小計(累計): {(balanceMap[m.id] ?? 0).toLocaleString()}<br />
+                税抜金額: {exTax.toLocaleString()}<br />消費税額: {tax.toLocaleString()}
+              </DetailsToggle>
+            )}
+          </td>
+          {!simpleUI && <td className="amount">{m.trustRemitAmount ? Number(m.trustRemitAmount).toLocaleString() : ''}</td>}
+          <td className="amount">{(balanceMap[m.id] ?? 0).toLocaleString()}</td>
+          {!simpleUI && <td>{m.note}</td>}
+          {!simpleUI && (<><td className="amount">{exTax.toLocaleString()}</td><td className="amount">{tax.toLocaleString()}</td></>)}
+          <td onClick={(e) => e.stopPropagation()}>{canDeleteThis && <button className="icon-btn" onClick={() => deleteItem(m)}>🗑</button>}</td>
+        </tr>
+        {isEditing && editForm && (
+          <tr className="row-editing">
+            <td colSpan={colCount}>
+              <div className="master-form" style={{ margin: '8px 0' }}>
+                <h4 style={{ marginTop: 0 }}>取引を編集</h4>
+                <TransactionFormFields
+                  formKind={editKind}
+                  values={editForm}
+                  setValues={setEditForm}
+                  submitAttempted={editSubmitAttempted}
+                  properties={properties}
+                  rooms={rooms}
+                  contractOptions={contractOptions}
+                  payeeOptions={payeeOptions}
+                  depositAccountOptions={depositAccountOptions}
+                  onPayeeChange={handleEditPayeeChange}
+                  onCounterpartyChange={handleEditCounterpartyChange}
+                />
+                {editError && <div className="form-error">{editError}</div>}
+                <div className="form-actions">
+                  <button className="btn-primary" onClick={saveEditItem} disabled={editSaving}>{editSaving ? '保存中...' : '保存'}</button>
+                  <button className="btn-secondary" onClick={closeEditRow} disabled={editSaving}>キャンセル</button>
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </Fragment>
     )
   }
 
@@ -587,202 +940,43 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
     <div>
       {canEditAny ? (
         <div className="master-form">
-          <h3>取引入力</h3>
-          {(canEditSales && canEditExpenses) && (
-            <div className="form-row">
-              <label>種別</label>
-              <div className="tabs">
-                <button type="button" className={formKind === 'sales' ? 'tab-btn active' : 'tab-btn'} onClick={() => switchFormKind('sales')}>売上</button>
-                <button type="button" className={formKind === 'expenses' ? 'tab-btn active' : 'tab-btn'} onClick={() => switchFormKind('expenses')}>経費</button>
-              </div>
-            </div>
-          )}
-          {simpleUI && <MonthLockBadge periodLocks={periodLocks} dateOrMonth={form.date} />}
-          <div className={fieldClass(submitAttempted, !form.date)}><label>日付<span className="required">*</span></label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-          <div className="form-row">
-            <label>物件</label>
-            <SearchableSelect
-              value={form.propertyId}
-              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
-              options={properties.map((p) => ({ id: p.id, label: p.name }))}
-            />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <h3 style={{ margin: 0 }}>取引入力</h3>
+            <button type="button" className="btn-secondary" onClick={() => setFormCollapsed((v) => !v)}>
+              {formCollapsed ? '入力欄を表示する' : '入力欄を折りたたむ'}
+            </button>
           </div>
-          {form.propertyId && (
-            <div className="form-row">
-              <label>号室</label>
-              <SearchableSelect
-                value={form.roomId}
-                onChange={(id) => setForm({ ...form, roomId: id })}
-                options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
-              />
-            </div>
-          )}
-          <div className="form-row">
-            <label>案件(契約)</label>
-            <div>
-              <SearchableSelect
-                value={form.contractId}
-                onChange={(id) => setForm({ ...form, contractId: id })}
-                options={contractOptions}
-                placeholder="物件・号室・入居者名で検索、または空欄のまま"
-              />
-              <div className="mini" style={{ color: '#6b6167' }}>
-                AD・付帯・契約手数料など、1つの案件に紐づく取引の場合に選択してください。管理料のように毎月発生する取引は空欄のままでOKです。
-              </div>
-            </div>
-          </div>
-          <div className="form-row">
-            <label>勘定科目</label>
-            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              {formKind === 'expenses' && <option value="">(未選択)</option>}
-              {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder={formKind === 'expenses' ? '例: 日常清掃 外注費' : ''} /></div>
-          {formKind === 'sales' && (
-            <div className="form-row">
-              <label>取引先名</label>
-              <div>
-                <input
-                  list={counterpartyListId}
-                  value={form.counterparty}
-                  onChange={(e) => handleCounterpartyChange(e.target.value)}
-                  autoComplete="off"
-                  placeholder="取引先マスタから入力して検索、または自由入力"
-                />
-                <datalist id={counterpartyListId}>
-                  {payeeOptions.map((o) => <option key={`${o.type}-${o.id}`} value={o.label} />)}
-                </datalist>
-                {form.counterpartyId && <div className="mini" style={{ color: '#6b6167' }}>{form.counterpartyType === 'vendor' ? '業者' : '取引先'}マスタとリンクしています</div>}
-              </div>
-            </div>
-          )}
-          {formKind === 'sales' && (
-            <div className="form-row">
-              <label>入金者名or相殺</label>
-              <input value={form.payerName} onChange={(e) => setForm({ ...form, payerName: e.target.value })} placeholder="実際の振込名義や「相殺」など" />
-            </div>
-          )}
-          {formKind === 'sales' && (
-            <div className="form-row">
-              <label>入金口座</label>
-              <input
-                list={depositAccountListId}
-                value={form.depositAccount}
-                onChange={(e) => setForm({ ...form, depositAccount: e.target.value })}
-                autoComplete="off"
-                placeholder="過去の入力履歴から選択、または自由入力"
-              />
-              <datalist id={depositAccountListId}>
-                {depositAccountOptions.map((a) => <option key={a} value={a} />)}
-              </datalist>
-            </div>
-          )}
-          {formKind === 'expenses' && (
-            <div className="form-row">
-              <label>支払先</label>
-              <div>
-                <input
-                  list={payeeListId}
-                  value={form.payee}
-                  onChange={(e) => handlePayeeChange(e.target.value)}
-                  autoComplete="off"
-                  placeholder="業者・取引先マスタから入力して検索、または自由入力"
-                />
-                <datalist id={payeeListId}>
-                  {payeeOptions.map((o) => <option key={`${o.type}-${o.id}`} value={o.label} />)}
-                </datalist>
-                {form.payeeId && <div className="mini" style={{ color: '#6b6167' }}>{form.payeeType === 'vendor' ? '業者' : '取引先'}マスタとリンクしています</div>}
-              </div>
-            </div>
-          )}
-          <div className={fieldClass(submitAttempted, !form.amount)}><label>金額{formKind === 'sales' ? '(予約売上)' : ''}<span className="required">*</span></label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-          {formKind === 'sales' && form.category === 'レントスペース' && (
-            <div className="form-row">
-              <label>実際の入金額</label>
-              <div>
-                <input type="number" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })} style={{ width: 120 }} />
-                <div className="mini" style={{ color: '#6b6167' }}>予約サイトからの実際の振込額。金額(予約売上)より少ない場合、差額を「サイト・決済手数料」として経費に自動登録します。分からない場合は空欄でOK。</div>
-              </div>
-            </div>
-          )}
-          {formKind === 'sales' && (
-            <div className="form-row">
-              <label>預り金</label>
-              <div>
-                <input type="number" value={form.trustAmount} onChange={(e) => setForm({ ...form, trustAmount: e.target.value })} placeholder="0" style={{ width: 120 }} />
-                <div className="mini" style={{ color: '#6b6167' }}>敷金・保証金・オーナー預り金など、預かっているお金がある場合に入力してください。保存すると「預り金・立替金」にも自動で記録されます(二重入力は不要です)。</div>
-              </div>
-            </div>
-          )}
-          {formKind === 'expenses' && (
-            <div className="form-row">
-              <label>預り金送金金額</label>
-              <div>
-                <input type="number" value={form.trustRemitAmount} onChange={(e) => setForm({ ...form, trustRemitAmount: e.target.value })} placeholder="0" style={{ width: 120 }} />
-                <div className="mini" style={{ color: '#6b6167' }}>預かっていたお金を送金・精算した場合の金額(参考記録用)。対応する「預り金・立替金」の記録は、そちらの画面で状態を更新してください。</div>
-              </div>
-            </div>
-          )}
-          <div className="form-row">
-            <label>消費税区分</label>
-            <select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })}>
-              {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label>支払方法</label>
-            <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
-              <option value="">(未選択)</option>
-              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          {formKind === 'sales' ? (
-            <div className="form-row">
-              <label>実際の入金日</label>
-              <div>
-                <input type="date" value={form.receivedDate} onChange={(e) => setForm({ ...form, receivedDate: e.target.value })} />
-                <div className="mini" style={{ color: '#6b6167' }}>計上日と実際の入金日がずれる場合のみ入力(空欄なら計上日と同じ扱い)。</div>
-              </div>
-            </div>
-          ) : (
-            <div className="form-row">
-              <label>実際の支払日</label>
-              <input type="date" value={form.paidDate} onChange={(e) => setForm({ ...form, paidDate: e.target.value })} />
-            </div>
-          )}
-          {formKind === 'expenses' && (
+          {!formCollapsed && (
             <>
-              <div className="form-row">
-                <label>領収書等の保管</label>
-                <input
-                  type="checkbox"
-                  style={{ width: 18, height: 18 }}
-                  checked={form.hasReceipt}
-                  onChange={(e) => setForm({ ...form, hasReceipt: e.target.checked })}
-                />
-              </div>
-              <div className="form-row">
-                <label>資本的支出に該当</label>
-                <div>
-                  <input
-                    type="checkbox"
-                    style={{ width: 18, height: 18 }}
-                    checked={form.isCapitalExpenditure}
-                    onChange={(e) => setForm({ ...form, isCapitalExpenditure: e.target.checked })}
-                  />
-                  <div className="mini" style={{ color: '#6b6167' }}>
-                    修繕費ではなく、資産計上して数年に分けて経費化すべき支出(大規模修繕・改良工事など)の場合にチェックしてください
+              {(canEditSales && canEditExpenses) && (
+                <div className="form-row">
+                  <label>種別</label>
+                  <div className="tabs">
+                    <button type="button" className={formKind === 'sales' ? 'tab-btn active' : 'tab-btn'} onClick={() => switchFormKind('sales')}>売上</button>
+                    <button type="button" className={formKind === 'expenses' ? 'tab-btn active' : 'tab-btn'} onClick={() => switchFormKind('expenses')}>経費</button>
                   </div>
                 </div>
+              )}
+              {simpleUI && <MonthLockBadge periodLocks={periodLocks} dateOrMonth={form.date} />}
+              <TransactionFormFields
+                formKind={formKind}
+                values={form}
+                setValues={setForm}
+                submitAttempted={submitAttempted}
+                properties={properties}
+                rooms={rooms}
+                contractOptions={contractOptions}
+                payeeOptions={payeeOptions}
+                depositAccountOptions={depositAccountOptions}
+                onPayeeChange={handlePayeeChange}
+                onCounterpartyChange={handleCounterpartyChange}
+              />
+              {error && <div className="form-error">{error}</div>}
+              <div className="form-actions">
+                <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
               </div>
             </>
           )}
-          <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="form-actions">
-            <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
-          </div>
         </div>
       ) : (
         <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
