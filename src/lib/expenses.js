@@ -18,6 +18,15 @@ export const expenseFromRow = (r) => ({
   sourceRef: r.source_ref || '',
   invoiceNumber: r.invoice_number || '',
   contractId: r.contract_id || '',
+  counterparty: r.counterparty || '',
+  counterpartyId: r.counterparty_id || '',
+  counterpartyType: r.counterparty_type || '',
+  payerName: r.payer_name || '',
+  depositAccount: r.deposit_account || '',
+  depositDate: r.deposit_date || '',
+  trustAmount: r.trust_amount ?? '',
+  trustRemitAmount: r.trust_remit_amount ?? '',
+  note: r.note || '',
 })
 
 export const expenseToRow = (e) => ({
@@ -39,4 +48,13 @@ export const expenseToRow = (e) => ({
   source_ref: e.sourceRef || null,
   invoice_number: e.invoiceNumber || null,
   contract_id: e.contractId || null,
+  counterparty: e.counterparty || null,
+  counterparty_id: e.counterpartyId || null,
+  counterparty_type: e.counterpartyType || null,
+  payer_name: e.payerName || null,
+  deposit_account: e.depositAccount || null,
+  deposit_date: e.depositDate || null,
+  trust_amount: e.trustAmount === '' || e.trustAmount == null ? null : Number(e.trustAmount),
+  trust_remit_amount: e.trustRemitAmount === '' || e.trustRemitAmount == null ? null : Number(e.trustRemitAmount),
+  note: e.note || null,
 })

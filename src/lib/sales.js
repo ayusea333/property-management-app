@@ -27,6 +27,15 @@ export const saleFromRow = (r) => ({
   receivedDate: r.received_date || '',
   taxType: r.tax_type || '',
   contractId: r.contract_id || '',
+  counterparty: r.counterparty || '',
+  counterpartyId: r.counterparty_id || '',
+  counterpartyType: r.counterparty_type || '',
+  payerName: r.payer_name || '',
+  depositAccount: r.deposit_account || '',
+  depositDate: r.deposit_date || '',
+  trustAmount: r.trust_amount ?? '',
+  trustRemitAmount: r.trust_remit_amount ?? '',
+  note: r.note || '',
 })
 
 export const saleToRow = (s) => ({
@@ -43,6 +52,15 @@ export const saleToRow = (s) => ({
   received_date: s.receivedDate || null,
   tax_type: s.taxType || null,
   contract_id: s.contractId || null,
+  counterparty: s.counterparty || null,
+  counterparty_id: s.counterpartyId || null,
+  counterparty_type: s.counterpartyType || null,
+  payer_name: s.payerName || null,
+  deposit_account: s.depositAccount || null,
+  deposit_date: s.depositDate || null,
+  trust_amount: s.trustAmount === '' || s.trustAmount == null ? null : Number(s.trustAmount),
+  trust_remit_amount: s.trustRemitAmount === '' || s.trustRemitAmount == null ? null : Number(s.trustRemitAmount),
+  note: s.note || null,
 })
 
 // 消費税区分の選択肢。10%課税を基準に、税抜金額・消費税額をその場で計算する。

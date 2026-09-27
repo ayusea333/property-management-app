@@ -16,6 +16,8 @@ export const trustFundFromRow = (r) => ({
   status: r.status || '保管中',
   settledDate: r.settled_date || '',
   note: r.note || '',
+  source: r.source || 'manual',
+  sourceRef: r.source_ref || '',
 })
 
 export const trustFundToRow = (t) => ({
@@ -28,4 +30,6 @@ export const trustFundToRow = (t) => ({
   status: t.status || '保管中',
   settled_date: t.settledDate || null,
   note: t.note || null,
+  source: t.source || 'manual',
+  source_ref: t.sourceRef || null,
 })
