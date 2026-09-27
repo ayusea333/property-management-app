@@ -2,6 +2,7 @@
 
 import ExcelJS from 'exceljs'
 import { SALES_CATEGORIES } from './sales'
+import { COST_BEARERS } from './repairs'
 import { fiscalMonths, fiscalPeriodFullLabel, fiscalPeriodNumber } from './period'
 import { drawTrendChartPng } from './chart'
 import logoUrl from '../assets/logo.png'
@@ -111,14 +112,22 @@ export function computeYoy(current, previous) {
   if (!previous || !previous.hasData) return null
   const diff = current.totalSales - previous.totalSales
   const rate = previous.totalSales ? diff / previous.totalSales : null
-  return { diff, rate, prevTotalSales: previous.totalSales, prevGrossProfit: previous.grossProfit }
+  const expenseDiff = current.totalExpenses - previous.totalExpenses
+  const expenseRate = previous.totalExpenses ? expenseDiff / previous.totalExpenses : null
+  const profitDiff = current.grossProfit - previous.grossProfit
+  const profitRate = previous.grossProfit ? profitDiff / previous.grossProfit : null
+  return {
+    diff, rate, prevTotalSales: previous.totalSales, prevGrossProfit: previous.grossProfit,
+    expenseDiff, expenseRate, prevTotalExpenses: previous.totalExpenses,
+    profitDiff, profitRate,
+  }
 }
 
 // 期単位の経営状況として追加で表示する項目(入金合計・オーナー送金合計・未納)。
 // 売上・経費(sales/expenses)以外のテーブルから、既存の集計・判定ロジックをそのまま流用して算出する。
 // 「未納」は月ごとに積み上がる性質のものではなく「今どれだけ滞っているか」を表す数値なので、
 // 期の中で今日時点までに到来した直近の月(期が終わっていれば期の最終月)を基準に算出する。
-export function computeFiscalExtras(months, { rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor }) {
+export function computeFiscalExtras(months, { rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor, repairs }) {
   const rentCollectedTotal = (rentPayments || [])
     .filter((p) => months.includes(p.targetMonth))
     .reduce((z, p) => z + Number(p.amount || 0), 0)
@@ -150,6 +159,21 @@ export function computeFiscalExtras(months, { rentPayments, ownerSettlements, al
     })
   }
 
+  // 修繕関連: この期間内に「完了(支払済み)」になった修繕費用の合計を、負担区分(会社負担/オーナー負担/
+  // 入居者負担/折半/未定)ごとに集計する。支払済みの修繕費は完了時点で自動的に経費(通常は「請負工事」)に
+  // 計上されるため、上の項目別売上構成(経費)の金額にも既に含まれている。ここでは「結局誰の負担だったか」を
+  // 経営判断用に別出しする。日付は各修繕の「支払日」を基準にする(オーナー精算の負担額計算と同じ基準)。
+  const paidRepairs = (repairs || []).filter((r) => months.includes((r.paymentDate || '').slice(0, 7)))
+  const repairCostByBearer = {}
+  COST_BEARERS.forEach((b) => { repairCostByBearer[b] = 0 })
+  let repairCostTotal = 0
+  paidRepairs.forEach((r) => {
+    const amount = Number(r.approvedAmount || r.estimateAmount || 0)
+    const bearer = Object.prototype.hasOwnProperty.call(repairCostByBearer, r.costBearer) ? r.costBearer : '未定'
+    repairCostByBearer[bearer] += amount
+    repairCostTotal += amount
+  })
+
   return {
     rentCollectedTotal,
     ownerRemittedTotal,
@@ -157,6 +181,9 @@ export function computeFiscalExtras(months, { rentPayments, ownerSettlements, al
     arrearsBaseMonth,
     arrearsCount,
     arrearsAmount,
+    repairCostTotal,
+    repairCostByBearer,
+    repairCount: paidRepairs.length,
   }
 }
 
@@ -416,31 +443,31 @@ export async function exportFiscalReportXlsx(report, yoy) {
   // ================= 前年比較 =================
   if (yoy) {
     const ws6 = wb.addWorksheet('前年比較')
-    titleBanner(ws6, 4, '前期との比較')
-     const overallHeader = ws5.addRow(['月', '売上', '経費', '粗利'])
-  styleHeaderRow(overallHeader, BRAND.purple)
-    const salesDiffRow = ws6.addRow(['総売上', report.totalSales, yoy.prevTotalSales, yoy.diff])
+    titleBanner(ws6, 5, '前期との比較')
+    const yoyHeader = ws6.addRow(['項目', '今期', '前期', '差額', '増減率'])
+    styleHeaderRow(yoyHeader, BRAND.purple)
+    const salesDiffRow = ws6.addRow(['総売上', report.totalSales, yoy.prevTotalSales, yoy.diff, yoy.rate ?? ''])
     styleDataRow(salesDiffRow)
-    const profitDiffRow = ws6.addRow(['粗利', report.grossProfit, yoy.prevGrossProfit, report.grossProfit - yoy.prevGrossProfit])
-    styleDataRow(profitDiffRow, { zebra: true })
-    ;[salesDiffRow, profitDiffRow].forEach((row) => {
+    const expenseDiffRow = ws6.addRow(['経費', report.totalExpenses, yoy.prevTotalExpenses, yoy.expenseDiff, yoy.expenseRate ?? ''])
+    styleDataRow(expenseDiffRow, { zebra: true })
+    const profitDiffRow = ws6.addRow(['粗利', report.grossProfit, yoy.prevGrossProfit, report.grossProfit - yoy.prevGrossProfit, yoy.profitRate ?? ''])
+    styleDataRow(profitDiffRow)
+    ;[salesDiffRow, expenseDiffRow, profitDiffRow].forEach((row) => {
       row.getCell(2).numFmt = YEN_FMT
       row.getCell(3).numFmt = YEN_FMT
       row.getCell(4).numFmt = YEN_FMT
       const diffCell = row.getCell(4)
       const v = diffCell.value
       diffCell.font = { bold: true, color: { argb: v >= 0 ? BRAND.red : BRAND.black } }
+      if (typeof row.getCell(5).value === 'number') {
+        row.getCell(5).numFmt = PCT_FMT
+        row.getCell(5).font = { bold: true, color: { argb: row.getCell(5).value >= 0 ? BRAND.red : BRAND.black } }
+      }
     })
-    ws6.addRow([])
-    const rateRow = ws6.addRow(['伸び率', yoy.rate ?? ''])
-    if (typeof yoy.rate === 'number') {
-      rateRow.getCell(2).numFmt = PCT_FMT
-      rateRow.getCell(2).font = { bold: true, color: { argb: yoy.rate >= 0 ? BRAND.red : BRAND.black } }
-    }
-    rateRow.getCell(1).font = { bold: true }
     ws6.getColumn(1).width = 16
     ws6.getColumn(2).width = 16
     ws6.getColumn(3).width = 16
+    ws6.getColumn(5).width = 12
     ws6.getColumn(4).width = 16
     applyPrintSetup(ws6)
   }
