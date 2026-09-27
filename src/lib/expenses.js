@@ -17,6 +17,7 @@ export const expenseFromRow = (r) => ({
   source: r.source || 'manual',
   sourceRef: r.source_ref || '',
   invoiceNumber: r.invoice_number || '',
+  contractId: r.contract_id || '',
 })
 
 export const expenseToRow = (e) => ({
@@ -37,4 +38,5 @@ export const expenseToRow = (e) => ({
   source: e.source || 'manual',
   source_ref: e.sourceRef || null,
   invoice_number: e.invoiceNumber || null,
+  contract_id: e.contractId || null,
 })

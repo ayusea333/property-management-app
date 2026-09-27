@@ -26,6 +26,7 @@ export const saleFromRow = (r) => ({
   paymentMethod: r.payment_method || '',
   receivedDate: r.received_date || '',
   taxType: r.tax_type || '',
+  contractId: r.contract_id || '',
 })
 
 export const saleToRow = (s) => ({
@@ -41,6 +42,7 @@ export const saleToRow = (s) => ({
   payment_method: s.paymentMethod || null,
   received_date: s.receivedDate || null,
   tax_type: s.taxType || null,
+  contract_id: s.contractId || null,
 })
 
 // 消費税区分の選択肢。10%課税を基準に、税抜金額・消費税額をその場で計算する。
