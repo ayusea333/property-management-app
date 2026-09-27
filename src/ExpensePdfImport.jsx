@@ -6,6 +6,7 @@ import { findMasterMatchInText, normalizeName } from './lib/fuzzyMatch'
 import { expenseToRow } from './lib/expenses'
 import { SALES_CATEGORIES, TAX_TYPES } from './lib/sales'
 import { logEdit } from './lib/editLog'
+import { fieldClass } from './lib/formValidation'
 
 // 🟢 = 自動で読み取れた(確認のみでOK) / 🟡 = 読み取れなかった・確信が持てないので要確認
 function fieldIcon(value) {
@@ -25,6 +26,7 @@ export default function ExpensePdfImportPanel({ allRecords, expenses, user, onIm
   const [parsingLabel, setParsingLabel] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
@@ -131,6 +133,7 @@ export default function ExpensePdfImportPanel({ allRecords, expenses, user, onIm
   const roomOptionsFor = (propertyId) => rooms.filter((r) => r.propertyId === propertyId)
 
   const confirmImport = async () => {
+    setSubmitAttempted(true)
     if (!items.length) { alert('取り込むデータがありません'); return }
     const missing = items.filter((it) => !it.date || !it.amount)
     if (missing.length) {
@@ -201,8 +204,8 @@ export default function ExpensePdfImportPanel({ allRecords, expenses, user, onIm
                 画像・スキャンPDFと判断し、OCR(文字認識)で読み取りました。手書き文字や画質が悪い場合、精度が落ちることがあります。
               </p>
             )}
-            <div className="form-row">
-              <label>{fieldIcon(it.date)} 日付</label>
+            <div className={fieldClass(submitAttempted, !it.date)}>
+              <label>{fieldIcon(it.date)} 日付<span className="required">*</span></label>
               <input type="date" value={it.date} onChange={(e) => updateItem(it.key, { date: e.target.value })} />
             </div>
             <div className="form-row">
@@ -245,8 +248,8 @@ export default function ExpensePdfImportPanel({ allRecords, expenses, user, onIm
                 )}
               </div>
             </div>
-            <div className="form-row">
-              <label>{fieldIcon(it.amount)} 金額</label>
+            <div className={fieldClass(submitAttempted, !it.amount)}>
+              <label>{fieldIcon(it.amount)} 金額<span className="required">*</span></label>
               <input type="number" value={it.amount} onChange={(e) => updateItem(it.key, { amount: e.target.value })} />
             </div>
             <div className="form-row">

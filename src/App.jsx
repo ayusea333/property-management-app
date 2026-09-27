@@ -34,6 +34,7 @@ import {
 } from './lib/acquisitions'
 import { storeSettlementFromRow } from './lib/storeSettlements'
 import { logEdit } from './lib/editLog'
+import { fieldClass } from './lib/formValidation'
 import Dashboard from './Dashboard'
 import TransactionsSection from './TransactionsSection'
 import CaseProfitSection from './CaseProfitSection'
@@ -284,6 +285,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
   const [form, setForm] = useState(emptyForm(config.fields))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   useEffect(() => {
     setForm(emptyForm(config.fields))
@@ -291,6 +293,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
     setSearch('')
     setStatusFilter('all')
     setError('')
+    setSubmitAttempted(false)
   }, [masterKey])
 
   const relationOptions = (relKey) => allRecords[relKey] || []
@@ -310,21 +313,25 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
     setEditingId(record.id)
     setForm({ ...record })
     setError('')
+    setSubmitAttempted(false)
   }
 
   const startNew = () => {
     setEditingId('new')
     setForm(emptyForm(config.fields))
     setError('')
+    setSubmitAttempted(false)
   }
 
   const cancelEdit = () => {
     setEditingId(null)
     setForm(emptyForm(config.fields))
     setError('')
+    setSubmitAttempted(false)
   }
 
   const handleSave = async () => {
+    setSubmitAttempted(true)
     for (const field of config.fields) {
       if (field.required && !form[field.key]) {
         setError(`「${field.label}」は必須です`)
@@ -430,7 +437,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
         <div className="master-form">
           <h3>{editingId === 'new' ? `${config.label}を新規登録` : `${config.label}を編集`}</h3>
           {config.fields.map((field) => (
-            <div className="form-row" key={field.key}>
+            <div className={fieldClass(submitAttempted, field.required && !form[field.key])} key={field.key}>
               <label>{field.label}{field.required && <span className="required">*</span>}</label>
               {field.dynamicFees ? (
                 <div>
@@ -627,6 +634,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
   const [payForm, setPayForm] = useState(null) // { tenantId, date, amount, note }
   const [saving, setSaving] = useState(false)
   const [memoDrafts, setMemoDrafts] = useState({})
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const rows = activeTenantsFor(allRecords, targetMonth).map((row) => {
     const payment = rentPayments.find((p) => p.tenantId === row.tenant.id && p.targetMonth === targetMonth)
@@ -710,6 +718,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
   }
 
   const savePayment = async () => {
+    setSubmitAttempted(true)
     if (!payForm.date) { alert('入金日を入力してください'); return }
     if (Number(payForm.amount) < 0) { alert('入金額にマイナスの金額は入力できません'); return }
     if (isMonthLocked(periodLocks, targetMonth)) { alert(`${formatMonthLabel(targetMonth)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
@@ -753,6 +762,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
         summary: `${target?.tenant?.name || ''} ${formatMonthLabel(targetMonth)}分 入金日: ${payForm.date}`,
       })
       setPayForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       alert('保存に失敗しました: ' + e.message)
     } finally {
@@ -950,8 +960,8 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
                   <td colSpan={rentTableColumnCount} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.tenant.name}様 {formatMonthLabel(targetMonth)}分の入金を記録</h3>
-                      <div className="form-row">
-                        <label>入金日</label>
+                      <div className={fieldClass(submitAttempted, !payForm.date)}>
+                        <label>入金日<span className="required">*</span></label>
                         <input type="date" value={payForm.date} onChange={(e) => setPayForm({ ...payForm, date: e.target.value })} />
                       </div>
                       <div className="form-row">
@@ -964,7 +974,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
                       </div>
                       <div className="form-actions">
                         <button className="btn-primary" onClick={savePayment} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
-                        <button className="btn-secondary" onClick={() => setPayForm(null)}>キャンセル</button>
+                        <button className="btn-secondary" onClick={() => { setPayForm(null); setSubmitAttempted(false) }}>キャンセル</button>
                       </div>
                     </div>
                   </td>
@@ -1013,6 +1023,7 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('open') // 'open'=保管中のみ / 'all'=すべて
   const [resolveForm, setResolveForm] = useState(null) // { id, status, settledDate, note }
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const owners = allRecords.owners || []
   const rooms = allRecords.rooms || []
@@ -1043,6 +1054,7 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
   }
 
   const submit = async () => {
+    setSubmitAttempted(true)
     if (!form.occurredDate) { setError('発生日を入力してください'); return }
     if (Number(form.amount) <= 0) { setError('金額は1円以上で入力してください'); return }
     setSaving(true)
@@ -1058,6 +1070,7 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
         summary: `${form.type}(${form.direction}) ${ownerName(form.ownerId) || roomInfo(form.roomId).roomLabel || ''} ${yen(form.amount)}`,
       })
       setForm(emptyTrustFundForm())
+      setSubmitAttempted(false)
     } catch (e) {
       setError('保存に失敗しました: ' + e.message)
     } finally {
@@ -1156,8 +1169,8 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
               placeholder="敷金・保証金・入居者預り金・修繕立替金などの場合に選択"
             />
           </div>
-          <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-          <div className="form-row"><label>発生日</label><input type="date" value={form.occurredDate} onChange={(e) => setForm({ ...form, occurredDate: e.target.value })} /></div>
+          <div className={fieldClass(submitAttempted, !(Number(form.amount) > 0))}><label>金額<span className="required">*</span></label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          <div className={fieldClass(submitAttempted, !form.occurredDate)}><label>発生日<span className="required">*</span></label><input type="date" value={form.occurredDate} onChange={(e) => setForm({ ...form, occurredDate: e.target.value })} /></div>
           <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="例: ○○様 敷金1か月分" /></div>
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
@@ -1274,6 +1287,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [bulkExporting, setBulkExporting] = useState(false)
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const owners = allRecords.owners || []
   // オーナーマスタに設定されている「送金日」(毎月何日に送金するか)の一覧。絞り込みの選択肢に使う。
@@ -1386,6 +1400,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       // 保存すると、この時点の内訳(入金明細・修繕費内訳など)が送金明細書用にスナップショットされる
       breakdown: row.breakdown,
     })
+    setSubmitAttempted(false)
   }
 
   const exportSingle = async (row) => {
@@ -1409,6 +1424,8 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
   }
 
   const saveForm = async () => {
+    setSubmitAttempted(true)
+    if (form.amount === '' || form.amount === null || form.amount === undefined) return
     setSaving(true)
     try {
       const payload = ownerSettlementToRow(form)
@@ -1423,6 +1440,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
         summary: `${ownerLabel} ${formatMonthLabel(targetMonth)}分 ${form.status} ${yen(form.amount)}`,
       })
       setForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       alert('保存に失敗しました: ' + e.message)
     } finally {
@@ -1517,7 +1535,14 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                   </>
                 )}
                 <td className="amount">
-                  {row.settlement ? yen(row.settlement.amount) : ''}
+                  {row.settlement ? (
+                    yen(row.settlement.amount)
+                  ) : (
+                    <span className="draft-value">
+                      {yen(row.referenceNet)}
+                      <span className="draft-label">下書き(未確定)</span>
+                    </span>
+                  )}
                   {simpleUI && (
                     <DetailsToggle label="内訳">
                       入金合計: {yen(row.rentCollected)}<br />
@@ -1550,9 +1575,12 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                   <td colSpan={simpleUI ? 6 : 11} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.owner.name}様 {formatMonthLabel(targetMonth)}分の精算・送金</h3>
-                      <div className="form-row">
-                        <label>精算・送金額</label>
+                      <div className={fieldClass(submitAttempted, form.amount === '' || form.amount === null || form.amount === undefined)}>
+                        <label>精算・送金額<span className="required">*</span></label>
                         <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                        {submitAttempted && (form.amount === '' || form.amount === null || form.amount === undefined) && (
+                          <div className="form-error" style={{ margin: 0 }}>必須項目です</div>
+                        )}
                       </div>
                       <div className="form-row">
                         <label>状態</label>
@@ -1575,7 +1603,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                       <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
                       <div className="form-actions">
                         <button className="btn-primary" onClick={saveForm} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
-                        <button className="btn-secondary" onClick={() => setForm(null)}>キャンセル</button>
+                        <button className="btn-secondary" onClick={() => { setForm(null); setSubmitAttempted(false) }}>キャンセル</button>
                       </div>
                     </div>
                   </td>
@@ -1620,6 +1648,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('open')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
@@ -1677,9 +1706,11 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
   const startNew = () => {
     setForm(emptyRepairForm())
     setError('')
+    setSubmitAttempted(false)
   }
 
   const submit = async () => {
+    setSubmitAttempted(true)
     if (!form.content) { setError('修繕内容を入力してください'); return }
     setSaving(true)
     setError('')
@@ -1690,6 +1721,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
       await onChanged()
       await logEdit({ user, tableLabel: '修繕管理', action: '追加', summary: `${propertyName(form.propertyId)} ${form.content}` })
       setForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       setError('保存に失敗しました: ' + e.message)
     } finally {
@@ -1766,7 +1798,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
               />
             </div>
           )}
-          <div className="form-row"><label>修繕内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 給湯器交換" /></div>
+          <div className={fieldClass(submitAttempted, !form.content)}><label>修繕内容<span className="required">*</span></label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 給湯器交換" /></div>
           <div className="form-row">
             <label>施工業者</label>
             <SearchableSelect
@@ -1793,7 +1825,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
             <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
-            <button className="btn-secondary" onClick={() => setForm(null)}>キャンセル</button>
+            <button className="btn-secondary" onClick={() => { setForm(null); setSubmitAttempted(false) }}>キャンセル</button>
           </div>
         </div>
       )}
@@ -1932,7 +1964,6 @@ const BASE_TOP_TABS = [
   { key: 'master', label: 'マスタ管理' },
   { key: 'rentPayments', label: '家賃入金' },
   { key: 'transactions', label: '取引管理' },
-  { key: 'caseProfit', label: '案件別収支' },
   { key: 'trustFunds', label: '預り金・立替金' },
   { key: 'ownerSettlements', label: 'オーナー精算・送金' },
   { key: 'repairs', label: '修繕管理' },
@@ -1952,6 +1983,7 @@ const DASHBOARD_SUB_TABS = [
   { key: 'overview', label: '概要' },
   { key: 'storeAnalytics', label: '店舗別実績' },
   { key: 'report', label: '決算レポート' },
+  { key: 'caseProfit', label: '案件別収支' },
 ]
 
 const PERM_FIELD_MAP = {
@@ -2335,13 +2367,6 @@ export default function App() {
               user={session.user}
             />
           )}
-          {!loading && !loadError && topTab === 'caseProfit' && (
-            <CaseProfitSection
-              sales={sales}
-              expenses={expenses}
-              allRecords={allRecords}
-            />
-          )}
           {!loading && !loadError && topTab === 'trustFunds' && (
             <TrustFundsSection
               allRecords={allRecords}
@@ -2436,6 +2461,13 @@ export default function App() {
               onChanged={loadAll}
               isAdmin={!!profile?.is_admin}
               simpleUI={!!profile?.is_simple_ui}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'caseProfit' && (
+            <CaseProfitSection
+              sales={sales}
+              expenses={expenses}
+              allRecords={allRecords}
             />
           )}
           {topTab === 'admin' && profile?.is_admin && (

@@ -10,6 +10,7 @@ import { saleToRow } from './lib/sales'
 import { currentMonthStr, formatMonthLabel } from './lib/rentPayments'
 import { logEdit } from './lib/editLog'
 import { DetailsToggle, CautionNotice } from './components/SimpleUI'
+import { fieldClass } from './lib/formValidation'
 
 function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
@@ -61,6 +62,7 @@ export default function ManagementAcquisitions({
   const [endDateInput, setEndDateInput] = useState(todayStr())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
   const roomLabel = (id) => rooms.find((r) => r.id === id)?.roomNumber || ''
@@ -140,12 +142,14 @@ export default function ManagementAcquisitions({
 
   const startRegisterFromRoom = (room) => {
     setError('')
+    setSubmitAttempted(false)
     setRegForm({ ...emptyRegisterForm(defaultRate), propertyId: room.propertyId, roomIds: [room.id] })
     setView('registered')
   }
 
   const startRegisterNew = () => {
     setError('')
+    setSubmitAttempted(false)
     setRegForm(emptyRegisterForm(defaultRate))
   }
 
@@ -157,6 +161,7 @@ export default function ManagementAcquisitions({
   }
 
   const submitRegister = async () => {
+    setSubmitAttempted(true)
     if (!regForm.propertyId) { setError('物件を選択してください'); return }
     if (regForm.roomIds.length === 0) { setError('部屋を1件以上選択してください'); return }
     if (!regForm.startDate) { setError('管理開始日を入力してください'); return }
@@ -220,6 +225,7 @@ export default function ManagementAcquisitions({
         summary: `${propertyName(regForm.propertyId)} ${n}戸を登録`,
       })
       setRegForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       setError('登録に失敗しました: ' + e.message)
     } finally {
@@ -239,6 +245,7 @@ export default function ManagementAcquisitions({
     })()
     const room = roomById(acq.roomId)
     setError('')
+    setSubmitAttempted(false)
     setRateForm({
       acquisitionId: acq.id,
       minEffectiveFrom: nextMonth,
@@ -249,6 +256,7 @@ export default function ManagementAcquisitions({
   }
 
   const submitRateChange = async () => {
+    setSubmitAttempted(true)
     if (!rateForm.effectiveFrom) { setError('適用開始月を入力してください'); return }
     if (rateForm.effectiveFrom < rateForm.minEffectiveFrom) {
       setError(`適用開始月は${formatMonthLabel(rateForm.minEffectiveFrom)}以降にしてください(過去の月には適用できません)`)
@@ -278,6 +286,7 @@ export default function ManagementAcquisitions({
         summary: `${formatMonthLabel(rateForm.effectiveFrom)}分から月額${yen(rateForm.monthlyBaseAmount)}に変更`,
       })
       setRateForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       setError('変更に失敗しました: ' + e.message)
     } finally {
@@ -289,11 +298,13 @@ export default function ManagementAcquisitions({
 
   const startEnd = (acq) => {
     setError('')
+    setSubmitAttempted(false)
     setEndingId(acq.id)
     setEndDateInput(todayStr())
   }
 
   const submitEnd = async (acq) => {
+    setSubmitAttempted(true)
     if (!endDateInput) { setError('終了日を入力してください'); return }
     if (endDateInput < acq.startDate) { setError('終了日が管理開始日より前になっています'); return }
     setSaving(true)
@@ -312,6 +323,7 @@ export default function ManagementAcquisitions({
         summary: `${propertyName(acq.propertyId)} ${roomLabel(acq.roomId)} を${endDateInput}付で終了`,
       })
       setEndingId(null)
+      setSubmitAttempted(false)
     } catch (e) {
       setError('終了処理に失敗しました: ' + e.message)
     } finally {
@@ -376,7 +388,7 @@ export default function ManagementAcquisitions({
       {regForm && (
         <div className="master-form">
           <h3>新規管理獲得の登録(複数部屋の一括登録も可能です)</h3>
-          <div className="form-row">
+          <div className={fieldClass(submitAttempted, !regForm.propertyId)}>
             <label>物件<span className="required">*</span></label>
             <select value={regForm.propertyId} onChange={(e) => setRegForm({ ...regForm, propertyId: e.target.value, roomIds: [] })}>
               <option value="">選択してください</option>
@@ -384,7 +396,7 @@ export default function ManagementAcquisitions({
             </select>
           </div>
           {regForm.propertyId && (
-            <div className="form-row">
+            <div className={fieldClass(submitAttempted, regForm.roomIds.length === 0)}>
               <label>部屋(複数選択可)<span className="required">*</span></label>
               <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #ddd', borderRadius: 6, padding: 8 }}>
                 {roomsForSelectedProperty.length === 0 && (
@@ -416,7 +428,7 @@ export default function ManagementAcquisitions({
             </select>
           </div>
           {regForm.acquisitionType === 'グループ会社' && (
-            <div className="form-row">
+            <div className={fieldClass(submitAttempted, !regForm.referralStoreId)}>
               <label>紹介元店舗<span className="required">*</span></label>
               <select value={regForm.referralStoreId} onChange={(e) => setRegForm({ ...regForm, referralStoreId: e.target.value })}>
                 <option value="">選択してください</option>
@@ -428,7 +440,7 @@ export default function ManagementAcquisitions({
             </div>
           )}
           <div className="form-row"><label>紹介者(任意)</label><input value={regForm.referralPerson} onChange={(e) => setRegForm({ ...regForm, referralPerson: e.target.value })} /></div>
-          <div className="form-row"><label>管理開始日<span className="required">*</span></label><input type="date" value={regForm.startDate} onChange={(e) => setRegForm({ ...regForm, startDate: e.target.value })} /></div>
+          <div className={fieldClass(submitAttempted, !regForm.startDate)}><label>管理開始日<span className="required">*</span></label><input type="date" value={regForm.startDate} onChange={(e) => setRegForm({ ...regForm, startDate: e.target.value })} /></div>
           <div className="form-row">
             <label>3L取り分率(%)</label>
             <input type="number" value={regForm.threeLRatePercent} onChange={(e) => setRegForm({ ...regForm, threeLRatePercent: Number(e.target.value) })} style={{ width: 100 }} />
@@ -443,7 +455,7 @@ export default function ManagementAcquisitions({
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
             <button className="btn-primary" onClick={submitRegister} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
-            <button className="btn-secondary" onClick={() => setRegForm(null)}>キャンセル</button>
+            <button className="btn-secondary" onClick={() => { setRegForm(null); setSubmitAttempted(false) }}>キャンセル</button>
           </div>
         </div>
       )}
@@ -537,8 +549,8 @@ export default function ManagementAcquisitions({
                       <td colSpan={9} style={{ background: '#f8f6f3' }}>
                         <div className="master-form" style={{ margin: '8px 0' }}>
                           <h3>月額支払額の変更(この対象月以降に適用。過去月の金額は変わりません)</h3>
-                          <div className="form-row">
-                            <label>適用開始月</label>
+                          <div className={fieldClass(submitAttempted, !rateForm.effectiveFrom)}>
+                            <label>適用開始月<span className="required">*</span></label>
                             <input type="month" min={rateForm.minEffectiveFrom} value={rateForm.effectiveFrom} onChange={(e) => setRateForm({ ...rateForm, effectiveFrom: e.target.value })} />
                           </div>
                           <div className="form-row"><label>新しい月額基準額</label><input type="number" value={rateForm.monthlyBaseAmount} onChange={(e) => setRateForm({ ...rateForm, monthlyBaseAmount: Number(e.target.value) })} /></div>
@@ -546,7 +558,7 @@ export default function ManagementAcquisitions({
                           {error && <div className="form-error">{error}</div>}
                           <div className="form-actions">
                             <button className="btn-primary" onClick={submitRateChange} disabled={saving}>{saving ? '保存中...' : '変更を保存'}</button>
-                            <button className="btn-secondary" onClick={() => setRateForm(null)}>キャンセル</button>
+                            <button className="btn-secondary" onClick={() => { setRateForm(null); setSubmitAttempted(false) }}>キャンセル</button>
                           </div>
                         </div>
                       </td>
@@ -557,11 +569,11 @@ export default function ManagementAcquisitions({
                       <td colSpan={9} style={{ background: '#f8f6f3' }}>
                         <div className="master-form" style={{ margin: '8px 0' }}>
                           <h3>この部屋の管理を終了しますか?</h3>
-                          <div className="form-row"><label>終了日</label><input type="date" value={endDateInput} onChange={(e) => setEndDateInput(e.target.value)} /></div>
+                          <div className={fieldClass(submitAttempted, !endDateInput)}><label>終了日<span className="required">*</span></label><input type="date" value={endDateInput} onChange={(e) => setEndDateInput(e.target.value)} /></div>
                           {error && <div className="form-error">{error}</div>}
                           <div className="form-actions">
                             <button className="btn-primary" onClick={() => submitEnd(a)} disabled={saving}>{saving ? '処理中...' : '終了する'}</button>
-                            <button className="btn-secondary" onClick={() => setEndingId(null)}>キャンセル</button>
+                            <button className="btn-secondary" onClick={() => { setEndingId(null); setSubmitAttempted(false) }}>キャンセル</button>
                           </div>
                         </div>
                       </td>
@@ -630,8 +642,8 @@ export default function ManagementAcquisitions({
                       <td colSpan={13} style={{ background: '#f8f6f3' }}>
                         <div className="master-form" style={{ margin: '8px 0' }}>
                           <h3>月額支払額の変更(この対象月以降に適用。過去月の金額は変わりません)</h3>
-                          <div className="form-row">
-                            <label>適用開始月</label>
+                          <div className={fieldClass(submitAttempted, !rateForm.effectiveFrom)}>
+                            <label>適用開始月<span className="required">*</span></label>
                             <input type="month" min={rateForm.minEffectiveFrom} value={rateForm.effectiveFrom} onChange={(e) => setRateForm({ ...rateForm, effectiveFrom: e.target.value })} />
                           </div>
                           <div className="form-row"><label>新しい月額基準額</label><input type="number" value={rateForm.monthlyBaseAmount} onChange={(e) => setRateForm({ ...rateForm, monthlyBaseAmount: Number(e.target.value) })} /></div>
@@ -639,7 +651,7 @@ export default function ManagementAcquisitions({
                           {error && <div className="form-error">{error}</div>}
                           <div className="form-actions">
                             <button className="btn-primary" onClick={submitRateChange} disabled={saving}>{saving ? '保存中...' : '変更を保存'}</button>
-                            <button className="btn-secondary" onClick={() => setRateForm(null)}>キャンセル</button>
+                            <button className="btn-secondary" onClick={() => { setRateForm(null); setSubmitAttempted(false) }}>キャンセル</button>
                           </div>
                         </div>
                       </td>
@@ -650,11 +662,11 @@ export default function ManagementAcquisitions({
                       <td colSpan={13} style={{ background: '#f8f6f3' }}>
                         <div className="master-form" style={{ margin: '8px 0' }}>
                           <h3>この部屋の管理を終了しますか?</h3>
-                          <div className="form-row"><label>終了日</label><input type="date" value={endDateInput} onChange={(e) => setEndDateInput(e.target.value)} /></div>
+                          <div className={fieldClass(submitAttempted, !endDateInput)}><label>終了日<span className="required">*</span></label><input type="date" value={endDateInput} onChange={(e) => setEndDateInput(e.target.value)} /></div>
                           {error && <div className="form-error">{error}</div>}
                           <div className="form-actions">
                             <button className="btn-primary" onClick={() => submitEnd(a)} disabled={saving}>{saving ? '処理中...' : '終了する'}</button>
-                            <button className="btn-secondary" onClick={() => setEndingId(null)}>キャンセル</button>
+                            <button className="btn-secondary" onClick={() => { setEndingId(null); setSubmitAttempted(false) }}>キャンセル</button>
                           </div>
                         </div>
                       </td>

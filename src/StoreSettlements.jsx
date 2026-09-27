@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase'
 import { STORE_SETTLEMENT_STATUSES, storeSettlementToRow } from './lib/storeSettlements'
 import { currentMonthStr, formatMonthLabel } from './lib/rentPayments'
 import { logEdit } from './lib/editLog'
+import { fieldClass } from './lib/formValidation'
 
 function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
@@ -14,6 +15,7 @@ export default function StoreSettlements({ allRecords, expenses, settlements, on
   const [statusFilter, setStatusFilter] = useState('')
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const referralStores = allRecords.referralStores || []
 
@@ -59,9 +61,12 @@ export default function StoreSettlements({ allRecords, expenses, settlements, on
       remittanceMethod: s?.remittanceMethod || '',
       note: s?.note || '',
     })
+    setSubmitAttempted(false)
   }
 
   const saveForm = async () => {
+    setSubmitAttempted(true)
+    if (form.amount === '' || form.amount === null || form.amount === undefined) return
     setSaving(true)
     try {
       const payload = storeSettlementToRow(form)
@@ -76,6 +81,7 @@ export default function StoreSettlements({ allRecords, expenses, settlements, on
         summary: `${store ? storeLabel(store) : ''} ${formatMonthLabel(targetMonth)}分 ${form.status} ${yen(form.amount)}`,
       })
       setForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       alert('保存に失敗しました: ' + e.message)
     } finally {
@@ -159,8 +165,8 @@ export default function StoreSettlements({ allRecords, expenses, settlements, on
                   <td colSpan={7} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{storeLabel(row.store)} {formatMonthLabel(targetMonth)}分の精算・送金</h3>
-                      <div className="form-row">
-                        <label>精算・送金額</label>
+                      <div className={fieldClass(submitAttempted, form.amount === '' || form.amount === null || form.amount === undefined)}>
+                        <label>精算・送金額<span className="required">*</span></label>
                         <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
                       </div>
                       <div className="form-row">
@@ -184,7 +190,7 @@ export default function StoreSettlements({ allRecords, expenses, settlements, on
                       <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
                       <div className="form-actions">
                         <button className="btn-primary" onClick={saveForm} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
-                        <button className="btn-secondary" onClick={() => setForm(null)}>キャンセル</button>
+                        <button className="btn-secondary" onClick={() => { setForm(null); setSubmitAttempted(false) }}>キャンセル</button>
                       </div>
                     </div>
                   </td>

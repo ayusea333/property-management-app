@@ -340,6 +340,25 @@ select {
   color: var(--brand-danger);
   margin-bottom: 12px;
 }
+/* 必須項目が未入力のまま登録しようとした時の色表示(サイト全体共通) */
+.form-row.missing input,
+.form-row.missing select,
+.form-row.missing textarea {
+  border-color: var(--brand-danger);
+  background: #fbeaea;
+}
+/* 取引管理などで、他の画面から自動反映されたがまだ内容を確認・確定していない値の色表示 */
+.draft-value {
+  background: #fdf0c8;
+  border: 1px solid #d8a800;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.draft-label {
+  font-size: 10px;
+  color: #8a6a00;
+  display: block;
+}
 .form-actions {
   display: flex;
   gap: 8px;
