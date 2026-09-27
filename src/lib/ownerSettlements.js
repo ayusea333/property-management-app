@@ -13,6 +13,10 @@ export const ownerSettlementFromRow = (r) => ({
   remittanceDate: r.remittance_date || '',
   remittanceMethod: r.remittance_method || '',
   note: r.note || '',
+  // 精算を記録した時点の内訳(入金明細・修繕費内訳など)のスナップショット。
+  // 送金明細書(Excel出力)は、精算後はこの内訳を使うことで、後から元データ(売上・修繕費など)が
+  // 変わっても過去の送金明細の内容が変わらないようにする。
+  breakdown: r.breakdown || null,
 })
 
 export const ownerSettlementToRow = (s) => ({
@@ -24,4 +28,5 @@ export const ownerSettlementToRow = (s) => ({
   remittance_date: s.remittanceDate || null,
   remittance_method: s.remittanceMethod || null,
   note: s.note || null,
+  breakdown: s.breakdown || null,
 })
