@@ -2455,6 +2455,7 @@ export default function App() {
               budgets={budgets}
               rentPayments={rentPayments}
               ownerSettlements={ownerSettlements}
+              repairs={repairs}
               allRecords={allRecords}
               arrearsMonthsCount={arrearsMonthsCount}
               activeTenantsFor={activeTenantsFor}

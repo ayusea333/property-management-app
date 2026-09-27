@@ -22,7 +22,7 @@ function periodYearOptions() {
   return arr
 }
 
-export default function ReportSection({ sales, expenses, budgets, rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor, onChanged, isAdmin, simpleUI }) {
+export default function ReportSection({ sales, expenses, budgets, rentPayments, ownerSettlements, repairs, allRecords, arrearsMonthsCount, activeTenantsFor, onChanged, isAdmin, simpleUI }) {
   const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
@@ -40,7 +40,7 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
   const report = computeFiscalReport(periodYear, sales, expenses)
   const prevReport = computeFiscalReport(periodYear - 1, sales, expenses)
   const yoy = computeYoy(report, prevReport)
-  const extras = computeFiscalExtras(report.months, { rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor })
+  const extras = computeFiscalExtras(report.months, { rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor, repairs })
 
   const budgetFor = (kind, category) =>
     (budgets || []).find((b) => b.fiscalYearStart === periodYear && b.kind === kind && b.category === category)
@@ -129,8 +129,16 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
         <div className="card"><div className="label">粗利</div><div className="num">{yen(report.grossProfit)}</div></div>
         <div className="card"><div className="label">粗利率</div><div className="num">{percent(report.grossProfitRate)}</div></div>
         <div className="card">
-          <div className="label">前期比(伸び率)</div>
-          <div className="num">{yoy ? percent(yoy.rate) : '前期データなし'}</div>
+          <div className="label">前期比(売上の伸び率)</div>
+          <div className="num">
+            {yoy ? percent(yoy.rate) : '前期データなし'}
+            {yoy && (
+              <DetailsToggle label="経費・粗利の前期比も見る">
+                経費: {percent(yoy.expenseRate)}(前期 {yen(yoy.prevTotalExpenses)} → 今期 {yen(report.totalExpenses)})<br />
+                粗利: {percent(yoy.profitRate)}(前期 {yen(yoy.prevGrossProfit)} → 今期 {yen(report.grossProfit)})
+              </DetailsToggle>
+            )}
+          </div>
         </div>
       </div>
 
@@ -145,9 +153,24 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
             {extras.arrearsAvailable ? `${extras.arrearsCount}件 / ${yen(extras.arrearsAmount)}` : '算出不可(期が未到来)'}
           </div>
         </div>
+        <div className="card">
+          <div className="label">修繕関連(期間内支払分)</div>
+          <div className="num">
+            {yen(extras.repairCostTotal)}
+            <DetailsToggle label="負担区分の内訳">
+              {extras.repairCount === 0 ? (
+                <>この期間に支払済みになった修繕はありません</>
+              ) : (
+                Object.entries(extras.repairCostByBearer)
+                  .filter(([, amount]) => amount !== 0)
+                  .map(([bearer, amount]) => <span key={bearer}>{bearer}: {yen(amount)}<br /></span>)
+              )}
+            </DetailsToggle>
+          </div>
+        </div>
       </div>
       <p className="mini" style={{ color: '#6b6167', marginTop: -8 }}>
-        「入金合計」「オーナー送金合計」は、この期の12か月分の実績を合計した数値です。「未納」は積み上げの数値ではなく、家賃入金画面と同じ判定方法で、直近の月時点でどれだけ滞っているかを表しています。管理戸数・空室率などは、現在のデータだけでは正確に算出できないため表示していません。
+        「入金合計」「オーナー送金合計」は、この期の12か月分の実績を合計した数値です。「未納」は積み上げの数値ではなく、家賃入金画面と同じ判定方法で、直近の月時点でどれだけ滞っているかを表しています。「修繕関連」は、この期間内に「完了(支払済み)」になった修繕費用(支払日基準)の合計で、負担区分(会社負担・オーナー負担・入居者負担・折半)ごとの内訳も確認できます。この金額は、下の項目別売上構成(経費)の「請負工事」等にも既に含まれています(二重計上ではありません)。管理戸数・空室率などは、現在のデータだけでは正確に算出できないため表示していません。
       </p>
 
       <div className="master-toolbar" style={{ marginTop: 24, alignItems: 'center' }}>
