@@ -51,9 +51,11 @@ function categoryMonthMatrix(records, categories, months) {
   return { matrix, uncategorized }
 }
 
-// 指定した期(startYear=9月開始の西暦)の業績を集計する
-export function computeFiscalReport(startYear, sales, expenses) {
-  const months = fiscalMonths(startYear)
+// 指定した期(startYear=9月開始の西暦)の業績を集計する。
+// monthsOverrideを渡すと、その期の中の一部の月(例: 特定の1か月)だけに絞って集計する
+// (画面上の月ドリルダウン用。Excel出力は常にmonthsOverrideなし=期全体で呼び出す)。
+export function computeFiscalReport(startYear, sales, expenses, monthsOverride) {
+  const months = monthsOverride || fiscalMonths(startYear)
   const salesMat = categoryMonthMatrix(sales, SALES_CATEGORIES, months)
   const expenseMat = categoryMonthMatrix(expenses, SALES_CATEGORIES, months)
 
