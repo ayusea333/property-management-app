@@ -37,6 +37,7 @@ import { logEdit } from './lib/editLog'
 import Dashboard from './Dashboard'
 import TransactionsSection from './TransactionsSection'
 import CaseProfitSection from './CaseProfitSection'
+import { exportOwnerRemittanceXlsx, exportOwnerRemittanceBulkXlsx } from './lib/ownerRemittance'
 import Login from './Login'
 import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
@@ -1272,6 +1273,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
   const [remittanceDayFilter, setRemittanceDayFilter] = useState('')
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [bulkExporting, setBulkExporting] = useState(false)
 
   const owners = allRecords.owners || []
   // オーナーマスタに設定されている「送金日」(毎月何日に送金するか)の一覧。絞り込みの選択肢に使う。
@@ -1290,9 +1292,21 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       const ownerRoomIds = new Set(ownerRooms.map((r) => r.id))
       const ownerTenantIds = new Set(tenants.filter((t) => ownerRoomIds.has(t.roomId)).map((t) => t.id))
 
-      const rentCollected = rentPayments
+      const monthRentPayments = rentPayments
         .filter((p) => p.targetMonth === targetMonth && ownerTenantIds.has(p.tenantId))
-        .reduce((z, p) => z + Number(p.amount || 0), 0)
+      const rentCollected = monthRentPayments.reduce((z, p) => z + Number(p.amount || 0), 0)
+      // 送金明細に載せる入金内訳(物件・号室・入居者ごと)
+      const rentDetails = monthRentPayments.map((p) => {
+        const tenant = tenants.find((t) => t.id === p.tenantId)
+        const room = rooms.find((r) => r.id === tenant?.roomId)
+        const property = properties.find((pr) => pr.id === room?.propertyId)
+        return {
+          propertyName: property?.name || '',
+          roomNumber: room?.roomNumber || '',
+          tenantName: tenant?.name || '',
+          amount: Number(p.amount || 0),
+        }
+      })
 
       const managementFee = sales
         .filter((s) => s.ownerId === owner.id && s.category === '管理料' && (s.date || '').slice(0, 7) === targetMonth)
@@ -1310,19 +1324,36 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
         const amount = Number(r.approvedAmount || r.estimateAmount || 0)
         return z + (r.costBearer === '折半' ? amount / 2 : amount)
       }, 0)
+      const repairDetails = ownerRepairs.map((r) => ({
+        content: r.content || '',
+        costBearer: r.costBearer || '',
+        amount: r.costBearer === '折半' ? Number(r.approvedAmount || r.estimateAmount || 0) / 2 : Number(r.approvedAmount || r.estimateAmount || 0),
+      }))
 
       // 預り金・立替金(未解消分)は、特定の月に発生した金額ではなく「今まだ残っている残高」なので、
       // 毎月の精算額の参考数値には含めていません(含めると、解消するまで毎月同じ金額が繰り返し表示されてしまうため)。
       // 内容を確認したうえで、必要な分だけ精算額に反映してください。
       const openTrustItems = (trustFunds || []).filter((t) => t.ownerId === owner.id && t.status === '保管中')
       const openTrustTotal = openTrustItems.reduce((z, t) => z + Number(t.amount || 0) * (t.direction === '立替金' ? -1 : 1), 0)
+      const openTrustDetails = openTrustItems.map((t) => ({
+        content: t.content || '',
+        direction: t.direction || '',
+        amount: Number(t.amount || 0) * (t.direction === '立替金' ? -1 : 1),
+      }))
 
       const settlement = (settlements || []).find((s) => s.ownerId === owner.id && s.targetMonth === targetMonth)
       const referenceNet = rentCollected - managementFee - repairOwnerBurden
 
+      // 送金明細書(Excel出力)用の内訳スナップショット。精算を保存する時点でこの内容が
+      // owner_settlements.breakdown に保存され、後から元データが変わっても過去の明細は変わらない。
+      const breakdown = {
+        rentCollected, rentDetails, managementFee, guaranteedRent,
+        repairOwnerBurden, repairDetails, openTrustTotal, openTrustDetails,
+      }
+
       return {
         owner, ownerProperties, rentCollected, managementFee, guaranteedRent,
-        ownerRepairs, repairOwnerBurden, openTrustItems, openTrustTotal, referenceNet, settlement,
+        ownerRepairs, repairOwnerBurden, openTrustItems, openTrustTotal, referenceNet, settlement, breakdown,
       }
     })
     .filter((row) => row.ownerProperties.length > 0)
@@ -1352,7 +1383,29 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       remittanceDate: s?.remittanceDate || '',
       remittanceMethod: s?.remittanceMethod || '',
       note: s?.note || '',
+      // 保存すると、この時点の内訳(入金明細・修繕費内訳など)が送金明細書用にスナップショットされる
+      breakdown: row.breakdown,
     })
+  }
+
+  const exportSingle = async (row) => {
+    try {
+      await exportOwnerRemittanceXlsx(row, targetMonth)
+    } catch (e) {
+      alert('出力に失敗しました: ' + e.message)
+    }
+  }
+
+  const exportBulk = async () => {
+    if (!rows.length) { alert('対象のオーナーがいません'); return }
+    setBulkExporting(true)
+    try {
+      await exportOwnerRemittanceBulkXlsx(rows, targetMonth)
+    } catch (e) {
+      alert('出力に失敗しました: ' + e.message)
+    } finally {
+      setBulkExporting(false)
+    }
   }
 
   const saveForm = async () => {
@@ -1407,6 +1460,9 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
           </select>
         )}
         <input className="search-input" placeholder="オーナー名で検索" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <button className="btn-secondary" onClick={exportBulk} disabled={bulkExporting}>
+          {bulkExporting ? '出力中...' : '対象月の明細をまとめて出力(Excel)'}
+        </button>
       </div>
 
       {!canEdit && (
@@ -1483,7 +1539,11 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                 </td>
                 <td>{row.settlement?.settlementDate || ''}</td>
                 <td>{row.settlement?.remittanceDate || ''}</td>
-                <td>{canEdit && <button className="btn-secondary" onClick={() => openForm(row)}>精算・送金を記録</button>}</td>
+                <td>
+                  {canEdit && <button className="btn-secondary" onClick={() => openForm(row)}>精算・送金を記録</button>}
+                  {' '}
+                  <button className="btn-secondary" onClick={() => exportSingle(row)}>明細をExcelで出力</button>
+                </td>
               </tr>
               {form && form.ownerId === row.owner.id && (
                 <tr>
