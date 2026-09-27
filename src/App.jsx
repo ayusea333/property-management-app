@@ -39,6 +39,7 @@ import Dashboard from './Dashboard'
 import TransactionsSection from './TransactionsSection'
 import CaseProfitSection from './CaseProfitSection'
 import { exportOwnerRemittanceXlsx, exportOwnerRemittanceBulkXlsx } from './lib/ownerRemittance'
+import { exportOwnerRemittancePdf, exportOwnerRemittanceBulkPdf } from './lib/ownerRemittancePdf'
 import Login from './Login'
 import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
@@ -1291,6 +1292,8 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [bulkExporting, setBulkExporting] = useState(false)
+  const [bulkPdfExporting, setBulkPdfExporting] = useState(false)
+  const [pdfExportingId, setPdfExportingId] = useState('')
   const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const owners = allRecords.owners || []
@@ -1415,6 +1418,17 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
     }
   }
 
+  const exportSinglePdf = async (row) => {
+    setPdfExportingId(row.owner.id)
+    try {
+      await exportOwnerRemittancePdf(row, targetMonth)
+    } catch (e) {
+      alert('PDFの出力に失敗しました: ' + e.message)
+    } finally {
+      setPdfExportingId('')
+    }
+  }
+
   const exportBulk = async () => {
     if (!rows.length) { alert('対象のオーナーがいません'); return }
     setBulkExporting(true)
@@ -1424,6 +1438,18 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       alert('出力に失敗しました: ' + e.message)
     } finally {
       setBulkExporting(false)
+    }
+  }
+
+  const exportBulkPdf = async () => {
+    if (!rows.length) { alert('対象のオーナーがいません'); return }
+    setBulkPdfExporting(true)
+    try {
+      await exportOwnerRemittanceBulkPdf(rows, targetMonth)
+    } catch (e) {
+      alert('PDFの出力に失敗しました: ' + e.message)
+    } finally {
+      setBulkPdfExporting(false)
     }
   }
 
@@ -1484,6 +1510,9 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
         <input className="search-input" placeholder="オーナー名で検索" value={search} onChange={(e) => setSearch(e.target.value)} />
         <button className="btn-secondary" onClick={exportBulk} disabled={bulkExporting}>
           {bulkExporting ? '出力中...' : '対象月の明細をまとめて出力(Excel)'}
+        </button>
+        <button className="btn-secondary" onClick={exportBulkPdf} disabled={bulkPdfExporting}>
+          {bulkPdfExporting ? '出力中...' : '対象月の明細をまとめて出力(PDF)'}
         </button>
       </div>
 
@@ -1572,6 +1601,10 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                   {canEdit && <button className="btn-secondary" onClick={() => openForm(row)}>精算・送金を記録</button>}
                   {' '}
                   <button className="btn-secondary" onClick={() => exportSingle(row)}>明細をExcelで出力</button>
+                  {' '}
+                  <button className="btn-secondary" onClick={() => exportSinglePdf(row)} disabled={pdfExportingId === row.owner.id}>
+                    {pdfExportingId === row.owner.id ? '出力中...' : '明細をPDFで出力'}
+                  </button>
                 </td>
               </tr>
               {form && form.ownerId === row.owner.id && (
