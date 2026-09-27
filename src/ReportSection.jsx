@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabase'
-import { currentFiscalStartYear, fiscalPeriodFullLabel } from './lib/period'
+import { currentFiscalStartYear, fiscalPeriodFullLabel, fiscalMonths } from './lib/period'
 import { computeFiscalReport, computeFiscalExtras, computeYoy, exportFiscalReportXlsx } from './lib/report'
 import { SALES_CATEGORIES } from './lib/sales'
 import { formatMonthLabel } from './lib/rentPayments'
@@ -24,6 +24,7 @@ function periodYearOptions() {
 
 export default function ReportSection({ sales, expenses, budgets, rentPayments, ownerSettlements, repairs, allRecords, arrearsMonthsCount, activeTenantsFor, onChanged, isAdmin, simpleUI }) {
   const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
+  const [periodMonth, setPeriodMonth] = useState('') // '' = 期全体(年間)。値がある場合はその月だけに絞り込む
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
 
@@ -37,10 +38,19 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
   // 予算入力中は編集内容が見えるよう、簡略表示は使わずすべての列を表示する
   const showSimpleColumns = simpleUI && !editingBudget
 
-  const report = computeFiscalReport(periodYear, sales, expenses)
-  const prevReport = computeFiscalReport(periodYear - 1, sales, expenses)
+  // 月を絞り込んでいる場合は、前期比較も「同じ月」の前年同月と比べる(前年度の期全体とは比べない)
+  const prevPeriodMonth = periodMonth
+    ? `${Number(periodMonth.slice(0, 4)) - 1}-${periodMonth.slice(5, 7)}`
+    : ''
+
+  const report = computeFiscalReport(periodYear, sales, expenses, periodMonth ? [periodMonth] : undefined)
+  const prevReport = computeFiscalReport(periodYear - 1, sales, expenses, periodMonth ? [prevPeriodMonth] : undefined)
   const yoy = computeYoy(report, prevReport)
   const extras = computeFiscalExtras(report.months, { rentPayments, ownerSettlements, allRecords, arrearsMonthsCount, activeTenantsFor, repairs })
+
+  // Excelの期末業績レポートは、画面の月絞り込みに関わらず常に期全体(年間)で出力する
+  const fullYearReport = periodMonth ? computeFiscalReport(periodYear, sales, expenses) : report
+  const fullYearYoy = periodMonth ? computeYoy(fullYearReport, computeFiscalReport(periodYear - 1, sales, expenses)) : yoy
 
   const budgetFor = (kind, category) =>
     (budgets || []).find((b) => b.fiscalYearStart === periodYear && b.kind === kind && b.category === category)
@@ -49,7 +59,7 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
     setExporting(true)
     setExportError('')
     try {
-      await exportFiscalReportXlsx(report, yoy)
+      await exportFiscalReportXlsx(fullYearReport, fullYearYoy)
     } catch (err) {
       setExportError('Excelの作成に失敗しました。もう一度お試しください。')
       console.error(err)
@@ -106,9 +116,15 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
     <div>
       <div className="master-toolbar">
         <label style={{ marginRight: 4 }}>対象の期</label>
-        <select value={periodYear} onChange={(e) => { setPeriodYear(Number(e.target.value)); setEditingBudget(false) }}>
+        <select value={periodYear} onChange={(e) => { setPeriodYear(Number(e.target.value)); setPeriodMonth(''); setEditingBudget(false) }}>
           {periodYearOptions().map((y) => (
             <option key={y} value={y}>{fiscalPeriodFullLabel(y)}</option>
+          ))}
+        </select>
+        <select value={periodMonth} onChange={(e) => { setPeriodMonth(e.target.value); setEditingBudget(false) }}>
+          <option value="">期全体(年間)</option>
+          {fiscalMonths(periodYear).map((m) => (
+            <option key={m} value={m}>{formatMonthLabel(m)}のみ</option>
           ))}
         </select>
         <button className="btn-primary" onClick={handleExport} disabled={exporting}>
@@ -119,13 +135,18 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
 
       {!report.hasData && (
         <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-          この期にはまだ売上・経費のデータがありません。
+          {periodMonth ? 'この月にはまだ売上・経費のデータがありません。' : 'この期にはまだ売上・経費のデータがありません。'}
+        </div>
+      )}
+      {periodMonth && (
+        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
+          {formatMonthLabel(periodMonth)}のみに絞り込んで表示しています。「Excelでダウンロード」は絞り込みに関わらず期全体(年間)の業績レポートを出力します。
         </div>
       )}
 
       <div className="cards">
         <div className="card"><div className="label">総売上</div><div className="num">{yen(report.totalSales)}</div></div>
-        <div className="card"><div className="label">年間経費</div><div className="num">{yen(report.totalExpenses)}</div></div>
+        <div className="card"><div className="label">{periodMonth ? '経費' : '年間経費'}</div><div className="num">{yen(report.totalExpenses)}</div></div>
         <div className="card"><div className="label">粗利</div><div className="num">{yen(report.grossProfit)}</div></div>
         <div className="card"><div className="label">粗利率</div><div className="num">{percent(report.grossProfitRate)}</div></div>
         <div className="card">
@@ -170,12 +191,12 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
         </div>
       </div>
       <p className="mini" style={{ color: '#6b6167', marginTop: -8 }}>
-        「入金合計」「オーナー送金合計」は、この期の12か月分の実績を合計した数値です。「未納」は積み上げの数値ではなく、家賃入金画面と同じ判定方法で、直近の月時点でどれだけ滞っているかを表しています。「修繕関連」は、この期間内に「完了(支払済み)」になった修繕費用(支払日基準)の合計で、負担区分(会社負担・オーナー負担・入居者負担・折半)ごとの内訳も確認できます。この金額は、下の項目別売上構成(経費)の「請負工事」等にも既に含まれています(二重計上ではありません)。管理戸数・空室率などは、現在のデータだけでは正確に算出できないため表示していません。
+        「入金合計」「オーナー送金合計」は、{periodMonth ? 'この月の' : 'この期の12か月分を合計した'}実績です。「未納」は積み上げの数値ではなく、家賃入金画面と同じ判定方法で、直近の月時点でどれだけ滞っているかを表しています。「修繕関連」は、この{periodMonth ? '月' : '期間'}内に「完了(支払済み)」になった修繕費用(支払日基準)の合計で、負担区分(会社負担・オーナー負担・入居者負担・折半)ごとの内訳も確認できます。この金額は、下の項目別売上構成(経費)の「請負工事」等にも既に含まれています(二重計上ではありません)。管理戸数・空室率などは、現在のデータだけでは正確に算出できないため表示していません。
       </p>
 
       <div className="master-toolbar" style={{ marginTop: 24, alignItems: 'center' }}>
-        <h3 style={{ margin: 0 }}>項目別売上構成・予算比較</h3>
-        {isAdmin && !editingBudget && (
+        <h3 style={{ margin: 0 }}>{periodMonth ? '項目別売上構成(月別実績)' : '項目別売上構成・予算比較'}</h3>
+        {isAdmin && !editingBudget && !periodMonth && (
           <button className="btn-secondary" onClick={handleStartEditBudget}>予算を編集</button>
         )}
         {isAdmin && editingBudget && (
@@ -189,7 +210,9 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
         {budgetError && <span className="form-error" style={{ marginBottom: 0 }}>{budgetError}</span>}
       </div>
       <p className="mini" style={{ color: '#6b6167', marginTop: 0 }}>
-        {showSimpleColumns
+        {periodMonth
+          ? '予算は年間(期全体)単位でのみ登録するため、月を絞り込んでいる間は実績のみを表示します。予算と比べる場合は「期全体(年間)」に戻してください。'
+          : showSimpleColumns
           ? '予算・差異は各行の「詳細」から確認できます。予算は管理者のみが登録・変更できます。'
           : '予算は経営判断に関わるため、管理者のみが登録・変更できます。予算を登録していない項目は0として扱われ、差異欄には実績との差額を表示します(実績が予算を上回ればプラス)。'}
       </p>
@@ -197,7 +220,7 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
       <div style={{ overflowX: 'auto' }}>
         <table className="master-table">
           <thead>
-            {showSimpleColumns ? (
+            {periodMonth || showSimpleColumns ? (
               <tr>
                 <th>項目</th>
                 <th className="amount">売上実績</th>
@@ -233,6 +256,17 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
               const expenseBudget = editingBudget
                 ? Number(draftAmounts[`経費|${r.category}`] || 0)
                 : (budgetFor('経費', r.category)?.amount ?? 0)
+              if (periodMonth) {
+                return (
+                  <tr key={r.category}>
+                    <td>{r.category}</td>
+                    <td className="amount">{yen(r.salesTotal)}</td>
+                    <td className="amount">{yen(r.expenseTotal)}</td>
+                    <td className="amount">{yen(r.profit)}</td>
+                    <td className="amount">{percent(r.ratio)}</td>
+                  </tr>
+                )
+              }
               if (showSimpleColumns) {
                 return (
                   <tr key={r.category}>
@@ -291,7 +325,7 @@ export default function ReportSection({ sales, expenses, budgets, rentPayments, 
               )
             })}
             {(report.uncategorizedSalesTotal !== 0 || report.uncategorizedExpenseTotal !== 0) && (
-              showSimpleColumns ? (
+              periodMonth || showSimpleColumns ? (
                 <tr>
                   <td>(分類なし)</td>
                   <td className="amount">{yen(report.uncategorizedSalesTotal)}</td>

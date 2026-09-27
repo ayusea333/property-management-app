@@ -671,6 +671,8 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
     })
   }
 
+  // 案件別収支画面(CaseProfitSection)にも表示されるよう、対象の契約(row.tenant.id)をcontractIdとして
+  // 記録する。修繕費の自動計上(syncExpenseForRepair)は部屋・物件単位で特定の契約に紐づかないため対象外。
   const postManagementFeeIfNeeded = async (row) => {
     const managementFee = row.room?.managementFee || 0
     if (!managementFee) return
@@ -682,6 +684,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
       ownerId: row.owner?.id || '',
       content: `${row.tenant.name}様 ${targetMonth}分 管理料(自動)`,
       amount: managementFee,
+      contractId: row.tenant.id,
       source: 'auto_management_fee',
       sourceRef: `${row.tenant.id}:${targetMonth}`,
     })
@@ -710,6 +713,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
       payeeId: acq.referralStoreId || '',
       payeeType: acq.referralStoreId ? 'referral_store' : '',
       amount: rate.groupMonthlyAmount,
+      contractId: row.tenant.id,
       source: 'group_commission',
       sourceRef: `${acq.id}:${targetMonth}`,
     })

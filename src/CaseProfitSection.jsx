@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import { currentFiscalStartYear, fiscalYearLabel, fiscalMonths } from './lib/period'
+import { formatMonthLabel } from './lib/rentPayments'
 
 // 案件(契約)ごとに、紐づく売上・経費をまとめて表示する画面。
-// 「取引管理」の入力フォームで「案件(契約)」を選択して登録した売上・経費だけが対象。
+// 対象は、(1)「取引管理」の入力フォームで「案件(契約)」を選択して登録した売上・経費、
+// および (2) 管理料(自動)・グループ会社支払(自動)のように、対象の契約が特定できる自動計上の取引。
 // AD・付帯・契約手数料のように、オーナー分・仲介業者分・日割精算分などをまとめて
 // 1つの案件として見られるようにする(sales・expensesテーブルはそのまま利用、二重管理はしない)。
+// 修繕費の自動計上は部屋・物件単位の記録で特定の契約に紐づかないため、ここには表示されない。
 // 一覧(ダッシュボード)で案件ごとの合計を見て、クリックすると明細が開く。
+// ※本機能拡張(自動計上取引を含める)より前に自動計上された過去分には契約が紐付いていないため、
+// 案件別収支には表示されない(今後新たに計上される分から対象になる)。
 
 function yen(n) {
   return '¥' + Math.round(n || 0).toLocaleString()
@@ -19,8 +24,9 @@ function periodYearOptions() {
 }
 
 export default function CaseProfitSection({ sales, expenses, allRecords }) {
-  const [periodMode, setPeriodMode] = useState('all') // all | year
+  const [periodMode, setPeriodMode] = useState('all') // all | year | month
   const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
+  const [periodMonth, setPeriodMonth] = useState(fiscalMonths(currentFiscalStartYear())[0])
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState('')
 
@@ -41,7 +47,11 @@ export default function CaseProfitSection({ sales, expenses, allRecords }) {
         id: `expense-${e.id}`, kind: 'expenses', date: e.date, category: e.category,
         content: e.content, payee: e.payee, amount: e.amount, contractId: e.contractId,
       })),
-  ].filter((m) => periodMode === 'all' || fiscalMonths(periodYear).includes((m.date || '').slice(0, 7)))
+  ].filter((m) => {
+    if (periodMode === 'all') return true
+    if (periodMode === 'month') return (m.date || '').slice(0, 7) === periodMonth
+    return fiscalMonths(periodYear).includes((m.date || '').slice(0, 7))
+  })
 
   const byContract = {}
   merged.forEach((m) => {
@@ -81,7 +91,7 @@ export default function CaseProfitSection({ sales, expenses, allRecords }) {
   return (
     <div>
       <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-        「取引管理」の入力フォームで「案件(契約)」を選んで登録した売上・経費を、案件ごとにまとめて表示します。管理料のように毎月発生する取引で案件を選ばなかったものは、ここには表示されません。行をクリックすると明細が開きます。
+        「取引管理」の入力フォームで「案件(契約)」を選んで登録した売上・経費に加えて、管理料(自動)・グループ会社支払(自動)のように対象の契約が特定できる自動計上分も、案件ごとにまとめて表示します(この拡張より前に計上された過去分は対象外です)。修繕費のように部屋・物件単位で特定の契約に紐づかない自動計上分は表示されません。行をクリックすると明細が開きます。
       </div>
 
       <div className="cards">
@@ -95,10 +105,18 @@ export default function CaseProfitSection({ sales, expenses, allRecords }) {
         <select value={periodMode} onChange={(e) => setPeriodMode(e.target.value)}>
           <option value="all">全期間</option>
           <option value="year">期を指定</option>
+          <option value="month">月を指定</option>
         </select>
         {periodMode === 'year' && (
           <select value={periodYear} onChange={(e) => setPeriodYear(Number(e.target.value))}>
             {periodYearOptions().map((y) => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
+          </select>
+        )}
+        {periodMode === 'month' && (
+          <select value={periodMonth} onChange={(e) => setPeriodMonth(e.target.value)}>
+            {periodYearOptions().flatMap((y) => fiscalMonths(y)).sort().reverse().map((m) => (
+              <option key={m} value={m}>{formatMonthLabel(m)}</option>
+            ))}
           </select>
         )}
         <input className="search-input" placeholder="物件・号室・氏名で検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
