@@ -878,10 +878,10 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
           <td>{propertyName(m.propertyId)}</td>
           <td>{roomLabel(m.roomId)}</td>
           {!simpleUI && <td>{counterpartyOrPayee}</td>}
-          <td>{m.content}{simpleUI && m.kind === 'expenses' && m.payee ? ` / ${m.payee}` : ''}</td>
           {!simpleUI && <td>{m.payerName}</td>}
           {!simpleUI && <td>{m.depositAccount}</td>}
           {!simpleUI && <td>{m.otherDate}</td>}
+          <td>{m.content}{simpleUI && m.kind === 'expenses' && m.payee ? ` / ${m.payee}` : ''}</td>
           {!simpleUI && <td className="amount">{m.trustAmount ? Number(m.trustAmount).toLocaleString() : ''}</td>}
           <td className="amount" onClick={simpleUI ? (e) => e.stopPropagation() : undefined}>
             {m.amount.toLocaleString()}
@@ -1072,10 +1072,10 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
           <tr>
             <th></th><th>日付</th><th>種別</th><th>勘定科目</th><th>物件</th><th>号室</th>
             {!simpleUI && <th>取引先/支払先</th>}
-            <th>内容</th>
             {!simpleUI && <th>入金者名等</th>}
             {!simpleUI && <th>入金口座</th>}
             {!simpleUI && <th>入金日・支払日</th>}
+            <th>内容</th>
             {!simpleUI && <th className="amount">預り金</th>}
             <th className="amount">金額</th>
             {!simpleUI && <th className="amount">預り金送金金額</th>}
