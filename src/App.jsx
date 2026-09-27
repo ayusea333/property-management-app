@@ -36,6 +36,7 @@ import { storeSettlementFromRow } from './lib/storeSettlements'
 import { logEdit } from './lib/editLog'
 import Dashboard from './Dashboard'
 import TransactionsSection from './TransactionsSection'
+import CaseProfitSection from './CaseProfitSection'
 import Login from './Login'
 import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
@@ -1871,6 +1872,7 @@ const BASE_TOP_TABS = [
   { key: 'master', label: 'マスタ管理' },
   { key: 'rentPayments', label: '家賃入金' },
   { key: 'transactions', label: '取引管理' },
+  { key: 'caseProfit', label: '案件別収支' },
   { key: 'trustFunds', label: '預り金・立替金' },
   { key: 'ownerSettlements', label: 'オーナー精算・送金' },
   { key: 'repairs', label: '修繕管理' },
@@ -2271,6 +2273,13 @@ export default function App() {
               canEditExpenses={canEdit('expenses')}
               simpleUI={!!profile?.is_simple_ui}
               user={session.user}
+            />
+          )}
+          {!loading && !loadError && topTab === 'caseProfit' && (
+            <CaseProfitSection
+              sales={sales}
+              expenses={expenses}
+              allRecords={allRecords}
             />
           )}
           {!loading && !loadError && topTab === 'trustFunds' && (

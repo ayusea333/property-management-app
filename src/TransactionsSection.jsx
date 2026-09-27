@@ -63,13 +63,21 @@ function parseAmountCell(s) {
 function emptyTransactionForm(kind) {
   return {
     date: new Date().toISOString().slice(0, 10),
-    propertyId: '', roomId: '',
+    propertyId: '', roomId: '', contractId: '',
     category: kind === 'sales' ? SALES_CATEGORIES[0] : '',
     content: '', amount: 0,
     depositAmount: '', receivedDate: '',
     payee: '', payeeId: '', payeeType: '', hasReceipt: false, paidDate: '', isCapitalExpenditure: false,
     paymentMethod: '', taxType: TAX_TYPES[0],
   }
+}
+
+// 案件(契約)の検索用ラベル。物件・号室・入居者名・入居日で絞り込みやすくする。
+function contractLabel(contract, properties, rooms) {
+  const room = rooms.find((r) => r.id === contract.roomId)
+  const property = properties.find((p) => p.id === room?.propertyId)
+  const name = contract.name || contract.contractorName || '(契約者不明)'
+  return `${property?.name || ''} ${room?.roomNumber || ''} ${name}(${contract.moveInDate || '入居日不明'})`
 }
 
 // プルダウンと検索(入力しながら絞り込み)の両方が使えるセレクト。売上・経費の入力フォームと同じ部品。
@@ -121,17 +129,19 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
   const rooms = allRecords.rooms || []
   const clients = allRecords.clients || []
   const vendors = allRecords.vendors || []
+  const tenants = allRecords.tenants || [] // 契約+入居者名をまとめた一覧(案件選択用)
   const payeeOptions = [
     ...vendors.map((v) => ({ id: v.id, type: 'vendor', label: v.name })),
     ...clients.map((c) => ({ id: c.id, type: 'client', label: c.name })),
   ]
+  const contractOptions = tenants.map((t) => ({ id: t.id, label: contractLabel(t, properties, rooms) }))
   const roomOptions = rooms.filter((r) => r.propertyId === form.propertyId)
   const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
   const roomLabel = (id) => rooms.find((r) => r.id === id)?.roomNumber || ''
 
   const switchFormKind = (kind) => {
     setFormKind(kind)
-    setForm({ ...emptyTransactionForm(kind), date: form.date, propertyId: form.propertyId, roomId: form.roomId })
+    setForm({ ...emptyTransactionForm(kind), date: form.date, propertyId: form.propertyId, roomId: form.roomId, contractId: form.contractId })
     setError('')
   }
 
@@ -478,6 +488,20 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
               />
             </div>
           )}
+          <div className="form-row">
+            <label>案件(契約)</label>
+            <div>
+              <SearchableSelect
+                value={form.contractId}
+                onChange={(id) => setForm({ ...form, contractId: id })}
+                options={contractOptions}
+                placeholder="物件・号室・入居者名で検索、または空欄のまま"
+              />
+              <div className="mini" style={{ color: '#6b6167' }}>
+                AD・付帯・契約手数料など、1つの案件に紐づく取引の場合に選択してください。管理料のように毎月発生する取引は空欄のままでOKです。
+              </div>
+            </div>
+          </div>
           <div className="form-row">
             <label>勘定科目</label>
             <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
