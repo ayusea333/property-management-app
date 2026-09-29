@@ -15,8 +15,12 @@ import {
   rentPaymentFromRow, rentPaymentToRow,
   currentMonthStr, prevMonthStr, formatMonthLabel,
 } from './lib/rentPayments'
-import { SALES_CATEGORIES, TAX_TYPES, saleFromRow, saleToRow } from './lib/sales'
+import { SALES_CATEGORIES, TAX_TYPES, saleFromRow } from './lib/sales'
 import { expenseFromRow, expenseToRow } from './lib/expenses'
+import {
+  postManagementFeeIfNeeded as postManagementFeeIfNeededShared,
+  postGroupCommissionIfNeeded as postGroupCommissionIfNeededShared,
+} from './lib/autoPosting'
 import {
   trustFundFromRow, trustFundToRow, TRUST_FUND_TYPES, TRUST_FUND_DIRECTIONS, TRUST_FUND_STATUSES,
 } from './lib/trustFunds'
@@ -30,7 +34,6 @@ import { budgetFromRow } from './lib/budgets'
 import { periodLockFromRow } from './lib/periodLocks'
 import {
   managementAcquisitionFromRow, acquisitionRateFromRow,
-  acquisitionCoversMonth, findApplicableRate,
 } from './lib/acquisitions'
 import { storeSettlementFromRow } from './lib/storeSettlements'
 import { logEdit } from './lib/editLog'
@@ -672,55 +675,18 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
     })
   }
 
-  // 案件別収支画面(CaseProfitSection)にも表示されるよう、対象の契約(row.tenant.id)をcontractIdとして
-  // 記録する。修繕費の自動計上(syncExpenseForRepair)は部屋・物件単位で特定の契約に紐づかないため対象外。
-  const postManagementFeeIfNeeded = async (row) => {
-    const managementFee = row.room?.managementFee || 0
-    if (!managementFee) return
-    const saleRow = saleToRow({
-      date: row.payment?.paymentDate || new Date().toISOString().slice(0, 10),
-      category: '管理料',
-      propertyId: row.property?.id || '',
-      roomId: row.room?.id || '',
-      ownerId: row.owner?.id || '',
-      content: `${row.tenant.name}様 ${targetMonth}分 管理料(自動)`,
-      amount: managementFee,
-      contractId: row.tenant.id,
-      source: 'auto_management_fee',
-      sourceRef: `${row.tenant.id}:${targetMonth}`,
-    })
-    const { error } = await supabase.from('sales').upsert(saleRow, { onConflict: 'source,source_ref' })
-    if (error) throw error
-  }
+  // 管理料(自動)・グループ会社支払(自動)の計上ロジックは、CSV一括取込(MasterImport.jsx)とも
+  // 共有するため lib/autoPosting.js に切り出してある(この画面からの呼び出し専用のラッパーとして残す)。
+  const postManagementFeeIfNeeded = async (row) => postManagementFeeIfNeededShared({
+    tenant: row.tenant, room: row.room, property: row.property, owner: row.owner,
+    targetMonth, paymentDate: row.payment?.paymentDate,
+  })
 
-  // 新規管理獲得(グループ会社紹介)の部屋であれば、対象月分のグループ会社支払額(月額)を経費に自動計上する。
-  // 「今アクティブか」ではなく対象月が管理期間に入っているかで判定するため、後から過去分を記録しても正しい月にだけ計上される。
-  const postGroupCommissionIfNeeded = async (row) => {
-    const roomId = row.room?.id
-    if (!roomId) return
-    const acq = (managementAcquisitions || []).find((a) => a.roomId === roomId && acquisitionCoversMonth(a, targetMonth))
-    if (!acq) return
-    const rate = findApplicableRate(managementAcquisitionRates, acq.id, targetMonth)
-    if (!rate || !rate.groupMonthlyAmount) return
-    const store = referralStores.find((s) => s.id === acq.referralStoreId)
-    const payeeLabel = store ? (store.groupName ? `${store.groupName} ${store.storeName}` : store.storeName) : ''
-    const expenseRow = expenseToRow({
-      date: row.payment?.paymentDate || new Date().toISOString().slice(0, 10),
-      propertyId: row.property?.id || '',
-      roomId,
-      category: 'グループ会社支払',
-      content: `${row.tenant.name}様 ${targetMonth}分 グループ会社支払額(自動・新規管理獲得)`,
-      payee: payeeLabel,
-      payeeId: acq.referralStoreId || '',
-      payeeType: acq.referralStoreId ? 'referral_store' : '',
-      amount: rate.groupMonthlyAmount,
-      contractId: row.tenant.id,
-      source: 'group_commission',
-      sourceRef: `${acq.id}:${targetMonth}`,
-    })
-    const { error } = await supabase.from('expenses').upsert(expenseRow, { onConflict: 'source,source_ref' })
-    if (error) throw error
-  }
+  const postGroupCommissionIfNeeded = async (row) => postGroupCommissionIfNeededShared({
+    tenant: row.tenant, room: row.room, property: row.property,
+    targetMonth, paymentDate: row.payment?.paymentDate,
+    managementAcquisitions, managementAcquisitionRates, referralStores,
+  })
 
   const savePayment = async () => {
     setSubmitAttempted(true)
@@ -2363,6 +2329,9 @@ export default function App() {
             <MasterImportPanel
               allRecords={allRecords}
               rentPayments={rentPayments}
+              periodLocks={periodLocks}
+              managementAcquisitions={managementAcquisitions}
+              managementAcquisitionRates={managementAcquisitionRates}
               onChanged={loadAll}
               canEditMaster={canEdit('master')}
               canEditRentPayments={canEdit('rentPayments')}

@@ -7,6 +7,7 @@ import { expenseToRow } from './lib/expenses'
 import { SALES_CATEGORIES, TAX_TYPES } from './lib/sales'
 import { logEdit } from './lib/editLog'
 import { fieldClass } from './lib/formValidation'
+import { isMonthLocked } from './components/SimpleUI'
 
 // 🟢 = 自動で読み取れた(確認のみでOK) / 🟡 = 読み取れなかった・確信が持てないので要確認
 function fieldIcon(value) {
@@ -20,7 +21,7 @@ function escapeRegExp(s) {
   return (s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-export default function ExpensePdfImportPanel({ allRecords, expenses, user, onImported, onClose }) {
+export default function ExpensePdfImportPanel({ allRecords, expenses, periodLocks, user, onImported, onClose }) {
   const [items, setItems] = useState([])
   const [parsing, setParsing] = useState(false)
   const [parsingLabel, setParsingLabel] = useState('')
@@ -138,6 +139,11 @@ export default function ExpensePdfImportPanel({ allRecords, expenses, user, onIm
     const missing = items.filter((it) => !it.date || !it.amount)
     if (missing.length) {
       setError(`日付・金額が未入力の項目があります(${missing.map((m) => m.fileName).join('、')})。入力するか、この項目を取込対象から外してください。`)
+      return
+    }
+    const locked = items.filter((it) => isMonthLocked(periodLocks, it.date))
+    if (locked.length) {
+      setError(`日付が月次締め済みの項目があります(${locked.map((m) => m.fileName).join('、')})。日付を確認するか、管理者に月次締めの解除を依頼してください。`)
       return
     }
     setSaving(true)
