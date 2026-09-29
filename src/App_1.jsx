@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment, useRef, useId } from 'react'
+import { useEffect, useState, Fragment, useId } from 'react'
 import { supabase } from './lib/supabase'
 import {
   ownerFromRow, ownerToRow,
@@ -15,11 +15,12 @@ import {
   rentPaymentFromRow, rentPaymentToRow,
   currentMonthStr, prevMonthStr, formatMonthLabel,
 } from './lib/rentPayments'
-import { SALES_CATEGORIES, TAX_TYPES, saleFromRow, saleToRow, taxBreakdown } from './lib/sales'
+import { SALES_CATEGORIES, TAX_TYPES, saleFromRow } from './lib/sales'
 import { expenseFromRow, expenseToRow } from './lib/expenses'
 import {
-  fiscalYearLabel, fiscalMonths, currentFiscalStartYear,
-} from './lib/period'
+  postManagementFeeIfNeeded as postManagementFeeIfNeededShared,
+  postGroupCommissionIfNeeded as postGroupCommissionIfNeededShared,
+} from './lib/autoPosting'
 import {
   trustFundFromRow, trustFundToRow, TRUST_FUND_TYPES, TRUST_FUND_DIRECTIONS, TRUST_FUND_STATUSES,
 } from './lib/trustFunds'
@@ -33,18 +34,20 @@ import { budgetFromRow } from './lib/budgets'
 import { periodLockFromRow } from './lib/periodLocks'
 import {
   managementAcquisitionFromRow, acquisitionRateFromRow,
-  acquisitionCoversMonth, findApplicableRate,
 } from './lib/acquisitions'
 import { storeSettlementFromRow } from './lib/storeSettlements'
 import { logEdit } from './lib/editLog'
-import { downloadCsv, parseCsv } from './lib/csv'
+import { fieldClass } from './lib/formValidation'
 import Dashboard from './Dashboard'
+import TransactionsSection from './TransactionsSection'
+import CaseProfitSection from './CaseProfitSection'
+import { exportOwnerRemittanceXlsx, exportOwnerRemittanceBulkXlsx } from './lib/ownerRemittance'
+import { exportOwnerRemittancePdf, exportOwnerRemittanceBulkPdf } from './lib/ownerRemittancePdf'
 import Login from './Login'
 import UserManagement from './UserManagement'
 import EditHistory from './EditHistory'
 import Backups from './Backups'
 import ReportSection from './ReportSection'
-import ExpensePdfImportPanel from './ExpensePdfImport'
 import PeriodLocks from './PeriodLocks'
 import ManagementAcquisitions from './ManagementAcquisitions'
 import StoreSettlements from './StoreSettlements'
@@ -223,8 +226,6 @@ const MASTER_GROUPS = [
   { label: 'データ取込', keys: ['csvImport'] },
 ]
 
-const PAYMENT_METHODS = ['振込', '現金', 'クレジットカード', '口座振替', 'その他']
-
 function emptyForm(fields) {
   const f = {}
   fields.forEach((field) => {
@@ -288,6 +289,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
   const [form, setForm] = useState(emptyForm(config.fields))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   useEffect(() => {
     setForm(emptyForm(config.fields))
@@ -295,6 +297,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
     setSearch('')
     setStatusFilter('all')
     setError('')
+    setSubmitAttempted(false)
   }, [masterKey])
 
   const relationOptions = (relKey) => allRecords[relKey] || []
@@ -314,21 +317,25 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
     setEditingId(record.id)
     setForm({ ...record })
     setError('')
+    setSubmitAttempted(false)
   }
 
   const startNew = () => {
     setEditingId('new')
     setForm(emptyForm(config.fields))
     setError('')
+    setSubmitAttempted(false)
   }
 
   const cancelEdit = () => {
     setEditingId(null)
     setForm(emptyForm(config.fields))
     setError('')
+    setSubmitAttempted(false)
   }
 
   const handleSave = async () => {
+    setSubmitAttempted(true)
     for (const field of config.fields) {
       if (field.required && !form[field.key]) {
         setError(`「${field.label}」は必須です`)
@@ -434,7 +441,7 @@ function MasterSection({ masterKey, allRecords, onChanged, canEdit, user }) {
         <div className="master-form">
           <h3>{editingId === 'new' ? `${config.label}を新規登録` : `${config.label}を編集`}</h3>
           {config.fields.map((field) => (
-            <div className="form-row" key={field.key}>
+            <div className={fieldClass(submitAttempted, field.required && !form[field.key])} key={field.key}>
               <label>{field.label}{field.required && <span className="required">*</span>}</label>
               {field.dynamicFees ? (
                 <div>
@@ -631,6 +638,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
   const [payForm, setPayForm] = useState(null) // { tenantId, date, amount, note }
   const [saving, setSaving] = useState(false)
   const [memoDrafts, setMemoDrafts] = useState({})
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const rows = activeTenantsFor(allRecords, targetMonth).map((row) => {
     const payment = rentPayments.find((p) => p.tenantId === row.tenant.id && p.targetMonth === targetMonth)
@@ -667,53 +675,21 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
     })
   }
 
-  const postManagementFeeIfNeeded = async (row) => {
-    const managementFee = row.room?.managementFee || 0
-    if (!managementFee) return
-    const saleRow = saleToRow({
-      date: row.payment?.paymentDate || new Date().toISOString().slice(0, 10),
-      category: '管理料',
-      propertyId: row.property?.id || '',
-      roomId: row.room?.id || '',
-      ownerId: row.owner?.id || '',
-      content: `${row.tenant.name}様 ${targetMonth}分 管理料(自動)`,
-      amount: managementFee,
-      source: 'auto_management_fee',
-      sourceRef: `${row.tenant.id}:${targetMonth}`,
-    })
-    const { error } = await supabase.from('sales').upsert(saleRow, { onConflict: 'source,source_ref' })
-    if (error) throw error
-  }
+  // 管理料(自動)・グループ会社支払(自動)の計上ロジックは、CSV一括取込(MasterImport.jsx)とも
+  // 共有するため lib/autoPosting.js に切り出してある(この画面からの呼び出し専用のラッパーとして残す)。
+  const postManagementFeeIfNeeded = async (row) => postManagementFeeIfNeededShared({
+    tenant: row.tenant, room: row.room, property: row.property, owner: row.owner,
+    targetMonth, paymentDate: row.payment?.paymentDate,
+  })
 
-  // 新規管理獲得(グループ会社紹介)の部屋であれば、対象月分のグループ会社支払額(月額)を経費に自動計上する。
-  // 「今アクティブか」ではなく対象月が管理期間に入っているかで判定するため、後から過去分を記録しても正しい月にだけ計上される。
-  const postGroupCommissionIfNeeded = async (row) => {
-    const roomId = row.room?.id
-    if (!roomId) return
-    const acq = (managementAcquisitions || []).find((a) => a.roomId === roomId && acquisitionCoversMonth(a, targetMonth))
-    if (!acq) return
-    const rate = findApplicableRate(managementAcquisitionRates, acq.id, targetMonth)
-    if (!rate || !rate.groupMonthlyAmount) return
-    const store = referralStores.find((s) => s.id === acq.referralStoreId)
-    const payeeLabel = store ? (store.groupName ? `${store.groupName} ${store.storeName}` : store.storeName) : ''
-    const expenseRow = expenseToRow({
-      date: row.payment?.paymentDate || new Date().toISOString().slice(0, 10),
-      propertyId: row.property?.id || '',
-      roomId,
-      category: 'グループ会社支払',
-      content: `${row.tenant.name}様 ${targetMonth}分 グループ会社支払額(自動・新規管理獲得)`,
-      payee: payeeLabel,
-      payeeId: acq.referralStoreId || '',
-      payeeType: acq.referralStoreId ? 'referral_store' : '',
-      amount: rate.groupMonthlyAmount,
-      source: 'group_commission',
-      sourceRef: `${acq.id}:${targetMonth}`,
-    })
-    const { error } = await supabase.from('expenses').upsert(expenseRow, { onConflict: 'source,source_ref' })
-    if (error) throw error
-  }
+  const postGroupCommissionIfNeeded = async (row) => postGroupCommissionIfNeededShared({
+    tenant: row.tenant, room: row.room, property: row.property,
+    targetMonth, paymentDate: row.payment?.paymentDate,
+    managementAcquisitions, managementAcquisitionRates, referralStores,
+  })
 
   const savePayment = async () => {
+    setSubmitAttempted(true)
     if (!payForm.date) { alert('入金日を入力してください'); return }
     if (Number(payForm.amount) < 0) { alert('入金額にマイナスの金額は入力できません'); return }
     if (isMonthLocked(periodLocks, targetMonth)) { alert(`${formatMonthLabel(targetMonth)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
@@ -757,6 +733,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
         summary: `${target?.tenant?.name || ''} ${formatMonthLabel(targetMonth)}分 入金日: ${payForm.date}`,
       })
       setPayForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       alert('保存に失敗しました: ' + e.message)
     } finally {
@@ -954,8 +931,8 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
                   <td colSpan={rentTableColumnCount} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.tenant.name}様 {formatMonthLabel(targetMonth)}分の入金を記録</h3>
-                      <div className="form-row">
-                        <label>入金日</label>
+                      <div className={fieldClass(submitAttempted, !payForm.date)}>
+                        <label>入金日<span className="required">*</span></label>
                         <input type="date" value={payForm.date} onChange={(e) => setPayForm({ ...payForm, date: e.target.value })} />
                       </div>
                       <div className="form-row">
@@ -968,7 +945,7 @@ function RentPaymentsSection({ allRecords, rentPayments, periodLocks, management
                       </div>
                       <div className="form-actions">
                         <button className="btn-primary" onClick={savePayment} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
-                        <button className="btn-secondary" onClick={() => setPayForm(null)}>キャンセル</button>
+                        <button className="btn-secondary" onClick={() => { setPayForm(null); setSubmitAttempted(false) }}>キャンセル</button>
                       </div>
                     </div>
                   </td>
@@ -1017,6 +994,7 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('open') // 'open'=保管中のみ / 'all'=すべて
   const [resolveForm, setResolveForm] = useState(null) // { id, status, settledDate, note }
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const owners = allRecords.owners || []
   const rooms = allRecords.rooms || []
@@ -1047,6 +1025,7 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
   }
 
   const submit = async () => {
+    setSubmitAttempted(true)
     if (!form.occurredDate) { setError('発生日を入力してください'); return }
     if (Number(form.amount) <= 0) { setError('金額は1円以上で入力してください'); return }
     setSaving(true)
@@ -1062,6 +1041,7 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
         summary: `${form.type}(${form.direction}) ${ownerName(form.ownerId) || roomInfo(form.roomId).roomLabel || ''} ${yen(form.amount)}`,
       })
       setForm(emptyTrustFundForm())
+      setSubmitAttempted(false)
     } catch (e) {
       setError('保存に失敗しました: ' + e.message)
     } finally {
@@ -1160,8 +1140,8 @@ function TrustFundsSection({ allRecords, trustFunds, onChanged, canEdit, user })
               placeholder="敷金・保証金・入居者預り金・修繕立替金などの場合に選択"
             />
           </div>
-          <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-          <div className="form-row"><label>発生日</label><input type="date" value={form.occurredDate} onChange={(e) => setForm({ ...form, occurredDate: e.target.value })} /></div>
+          <div className={fieldClass(submitAttempted, !(Number(form.amount) > 0))}><label>金額<span className="required">*</span></label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
+          <div className={fieldClass(submitAttempted, !form.occurredDate)}><label>発生日<span className="required">*</span></label><input type="date" value={form.occurredDate} onChange={(e) => setForm({ ...form, occurredDate: e.target.value })} /></div>
           <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="例: ○○様 敷金1か月分" /></div>
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
@@ -1277,6 +1257,10 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
   const [remittanceDayFilter, setRemittanceDayFilter] = useState('')
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [bulkExporting, setBulkExporting] = useState(false)
+  const [bulkPdfExporting, setBulkPdfExporting] = useState(false)
+  const [pdfExportingId, setPdfExportingId] = useState('')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const owners = allRecords.owners || []
   // オーナーマスタに設定されている「送金日」(毎月何日に送金するか)の一覧。絞り込みの選択肢に使う。
@@ -1295,9 +1279,21 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       const ownerRoomIds = new Set(ownerRooms.map((r) => r.id))
       const ownerTenantIds = new Set(tenants.filter((t) => ownerRoomIds.has(t.roomId)).map((t) => t.id))
 
-      const rentCollected = rentPayments
+      const monthRentPayments = rentPayments
         .filter((p) => p.targetMonth === targetMonth && ownerTenantIds.has(p.tenantId))
-        .reduce((z, p) => z + Number(p.amount || 0), 0)
+      const rentCollected = monthRentPayments.reduce((z, p) => z + Number(p.amount || 0), 0)
+      // 送金明細に載せる入金内訳(物件・号室・入居者ごと)
+      const rentDetails = monthRentPayments.map((p) => {
+        const tenant = tenants.find((t) => t.id === p.tenantId)
+        const room = rooms.find((r) => r.id === tenant?.roomId)
+        const property = properties.find((pr) => pr.id === room?.propertyId)
+        return {
+          propertyName: property?.name || '',
+          roomNumber: room?.roomNumber || '',
+          tenantName: tenant?.name || '',
+          amount: Number(p.amount || 0),
+        }
+      })
 
       const managementFee = sales
         .filter((s) => s.ownerId === owner.id && s.category === '管理料' && (s.date || '').slice(0, 7) === targetMonth)
@@ -1315,19 +1311,36 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
         const amount = Number(r.approvedAmount || r.estimateAmount || 0)
         return z + (r.costBearer === '折半' ? amount / 2 : amount)
       }, 0)
+      const repairDetails = ownerRepairs.map((r) => ({
+        content: r.content || '',
+        costBearer: r.costBearer || '',
+        amount: r.costBearer === '折半' ? Number(r.approvedAmount || r.estimateAmount || 0) / 2 : Number(r.approvedAmount || r.estimateAmount || 0),
+      }))
 
       // 預り金・立替金(未解消分)は、特定の月に発生した金額ではなく「今まだ残っている残高」なので、
       // 毎月の精算額の参考数値には含めていません(含めると、解消するまで毎月同じ金額が繰り返し表示されてしまうため)。
       // 内容を確認したうえで、必要な分だけ精算額に反映してください。
       const openTrustItems = (trustFunds || []).filter((t) => t.ownerId === owner.id && t.status === '保管中')
       const openTrustTotal = openTrustItems.reduce((z, t) => z + Number(t.amount || 0) * (t.direction === '立替金' ? -1 : 1), 0)
+      const openTrustDetails = openTrustItems.map((t) => ({
+        content: t.content || '',
+        direction: t.direction || '',
+        amount: Number(t.amount || 0) * (t.direction === '立替金' ? -1 : 1),
+      }))
 
       const settlement = (settlements || []).find((s) => s.ownerId === owner.id && s.targetMonth === targetMonth)
       const referenceNet = rentCollected - managementFee - repairOwnerBurden
 
+      // 送金明細書(Excel出力)用の内訳スナップショット。精算を保存する時点でこの内容が
+      // owner_settlements.breakdown に保存され、後から元データが変わっても過去の明細は変わらない。
+      const breakdown = {
+        rentCollected, rentDetails, managementFee, guaranteedRent,
+        repairOwnerBurden, repairDetails, openTrustTotal, openTrustDetails,
+      }
+
       return {
         owner, ownerProperties, rentCollected, managementFee, guaranteedRent,
-        ownerRepairs, repairOwnerBurden, openTrustItems, openTrustTotal, referenceNet, settlement,
+        ownerRepairs, repairOwnerBurden, openTrustItems, openTrustTotal, referenceNet, settlement, breakdown,
       }
     })
     .filter((row) => row.ownerProperties.length > 0)
@@ -1357,10 +1370,58 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
       remittanceDate: s?.remittanceDate || '',
       remittanceMethod: s?.remittanceMethod || '',
       note: s?.note || '',
+      // 保存すると、この時点の内訳(入金明細・修繕費内訳など)が送金明細書用にスナップショットされる
+      breakdown: row.breakdown,
     })
+    setSubmitAttempted(false)
+  }
+
+  const exportSingle = async (row) => {
+    try {
+      await exportOwnerRemittanceXlsx(row, targetMonth)
+    } catch (e) {
+      alert('出力に失敗しました: ' + e.message)
+    }
+  }
+
+  const exportSinglePdf = async (row) => {
+    setPdfExportingId(row.owner.id)
+    try {
+      await exportOwnerRemittancePdf(row, targetMonth)
+    } catch (e) {
+      alert('PDFの出力に失敗しました: ' + e.message)
+    } finally {
+      setPdfExportingId('')
+    }
+  }
+
+  const exportBulk = async () => {
+    if (!rows.length) { alert('対象のオーナーがいません'); return }
+    setBulkExporting(true)
+    try {
+      await exportOwnerRemittanceBulkXlsx(rows, targetMonth)
+    } catch (e) {
+      alert('出力に失敗しました: ' + e.message)
+    } finally {
+      setBulkExporting(false)
+    }
+  }
+
+  const exportBulkPdf = async () => {
+    if (!rows.length) { alert('対象のオーナーがいません'); return }
+    setBulkPdfExporting(true)
+    try {
+      await exportOwnerRemittanceBulkPdf(rows, targetMonth)
+    } catch (e) {
+      alert('PDFの出力に失敗しました: ' + e.message)
+    } finally {
+      setBulkPdfExporting(false)
+    }
   }
 
   const saveForm = async () => {
+    setSubmitAttempted(true)
+    if (form.amount === '' || form.amount === null || form.amount === undefined) return
     setSaving(true)
     try {
       const payload = ownerSettlementToRow(form)
@@ -1375,6 +1436,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
         summary: `${ownerLabel} ${formatMonthLabel(targetMonth)}分 ${form.status} ${yen(form.amount)}`,
       })
       setForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       alert('保存に失敗しました: ' + e.message)
     } finally {
@@ -1412,6 +1474,12 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
           </select>
         )}
         <input className="search-input" placeholder="オーナー名で検索" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <button className="btn-secondary" onClick={exportBulk} disabled={bulkExporting}>
+          {bulkExporting ? '出力中...' : '対象月の明細をまとめて出力(Excel)'}
+        </button>
+        <button className="btn-secondary" onClick={exportBulkPdf} disabled={bulkPdfExporting}>
+          {bulkPdfExporting ? '出力中...' : '対象月の明細をまとめて出力(PDF)'}
+        </button>
       </div>
 
       {!canEdit && (
@@ -1466,7 +1534,14 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                   </>
                 )}
                 <td className="amount">
-                  {row.settlement ? yen(row.settlement.amount) : ''}
+                  {row.settlement ? (
+                    yen(row.settlement.amount)
+                  ) : (
+                    <span className="draft-value">
+                      {yen(row.referenceNet)}
+                      <span className="draft-label">下書き(未確定)</span>
+                    </span>
+                  )}
                   {simpleUI && (
                     <DetailsToggle label="内訳">
                       入金合計: {yen(row.rentCollected)}<br />
@@ -1488,16 +1563,27 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                 </td>
                 <td>{row.settlement?.settlementDate || ''}</td>
                 <td>{row.settlement?.remittanceDate || ''}</td>
-                <td>{canEdit && <button className="btn-secondary" onClick={() => openForm(row)}>精算・送金を記録</button>}</td>
+                <td>
+                  {canEdit && <button className="btn-secondary" onClick={() => openForm(row)}>精算・送金を記録</button>}
+                  {' '}
+                  <button className="btn-secondary" onClick={() => exportSingle(row)}>明細をExcelで出力</button>
+                  {' '}
+                  <button className="btn-secondary" onClick={() => exportSinglePdf(row)} disabled={pdfExportingId === row.owner.id}>
+                    {pdfExportingId === row.owner.id ? '出力中...' : '明細をPDFで出力'}
+                  </button>
+                </td>
               </tr>
               {form && form.ownerId === row.owner.id && (
                 <tr>
                   <td colSpan={simpleUI ? 6 : 11} style={{ background: '#f8f6f3' }}>
                     <div className="master-form" style={{ margin: '8px 0' }}>
                       <h3>{row.owner.name}様 {formatMonthLabel(targetMonth)}分の精算・送金</h3>
-                      <div className="form-row">
-                        <label>精算・送金額</label>
+                      <div className={fieldClass(submitAttempted, form.amount === '' || form.amount === null || form.amount === undefined)}>
+                        <label>精算・送金額<span className="required">*</span></label>
                         <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                        {submitAttempted && (form.amount === '' || form.amount === null || form.amount === undefined) && (
+                          <div className="form-error" style={{ margin: 0 }}>必須項目です</div>
+                        )}
                       </div>
                       <div className="form-row">
                         <label>状態</label>
@@ -1520,7 +1606,7 @@ function OwnerSettlementsSection({ allRecords, rentPayments, sales, trustFunds, 
                       <div className="form-row"><label>備考</label><input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></div>
                       <div className="form-actions">
                         <button className="btn-primary" onClick={saveForm} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
-                        <button className="btn-secondary" onClick={() => setForm(null)}>キャンセル</button>
+                        <button className="btn-secondary" onClick={() => { setForm(null); setSubmitAttempted(false) }}>キャンセル</button>
                       </div>
                     </div>
                   </td>
@@ -1565,6 +1651,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('open')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
@@ -1622,9 +1709,11 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
   const startNew = () => {
     setForm(emptyRepairForm())
     setError('')
+    setSubmitAttempted(false)
   }
 
   const submit = async () => {
+    setSubmitAttempted(true)
     if (!form.content) { setError('修繕内容を入力してください'); return }
     setSaving(true)
     setError('')
@@ -1635,6 +1724,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
       await onChanged()
       await logEdit({ user, tableLabel: '修繕管理', action: '追加', summary: `${propertyName(form.propertyId)} ${form.content}` })
       setForm(null)
+      setSubmitAttempted(false)
     } catch (e) {
       setError('保存に失敗しました: ' + e.message)
     } finally {
@@ -1711,7 +1801,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
               />
             </div>
           )}
-          <div className="form-row"><label>修繕内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 給湯器交換" /></div>
+          <div className={fieldClass(submitAttempted, !form.content)}><label>修繕内容<span className="required">*</span></label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 給湯器交換" /></div>
           <div className="form-row">
             <label>施工業者</label>
             <SearchableSelect
@@ -1738,7 +1828,7 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
           {error && <div className="form-error">{error}</div>}
           <div className="form-actions">
             <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
-            <button className="btn-secondary" onClick={() => setForm(null)}>キャンセル</button>
+            <button className="btn-secondary" onClick={() => { setForm(null); setSubmitAttempted(false) }}>キャンセル</button>
           </div>
         </div>
       )}
@@ -1872,806 +1962,11 @@ function RepairsSection({ allRecords, repairs, expenses, onChanged, canEdit, use
   )
 }
 
-// ---- 表示期間(期・月)の共通フィルタ ----
-
-function periodYearOptions() {
-  const cur = currentFiscalStartYear()
-  const arr = []
-  for (let y = cur; y >= cur - 4; y--) arr.push(y)
-  return arr
-}
-
-function PeriodFilter({ year, month, onYear, onMonth }) {
-  const months = fiscalMonths(year)
-  return (
-    <>
-      <select value={year} onChange={(e) => onYear(Number(e.target.value))}>
-        {periodYearOptions().map((y) => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
-      </select>
-      <select value={month} onChange={(e) => onMonth(e.target.value)}>
-        <option value="all">期全体</option>
-        {months.map((m) => <option key={m} value={m}>{Number(m.slice(5))}月</option>)}
-      </select>
-    </>
-  )
-}
-
-function inPeriod(dateStr, year, month) {
-  if (!dateStr) return false
-  const m = dateStr.slice(0, 7)
-  if (month === 'all') return fiscalMonths(year).includes(m)
-  return m === month
-}
-
-// CSVインポート用: "2026/9/1" 「2026-09-01」などをYYYY-MM-DDに正規化する。読めない場合は空文字。
-function normalizeDate(s) {
-  const m = String(s || '').trim().match(/^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})/)
-  if (!m) return ''
-  const [, y, mo, d] = m
-  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-}
-
-// CSVインポート用: 金額欄の "¥" "," "円" や空白を取り除いて数値化する
-function parseAmountCell(s) {
-  const cleaned = String(s || '').trim().replace(/[¥,円\s]/g, '')
-  return cleaned === '' ? NaN : Number(cleaned)
-}
-
-// ---- 売上一覧・入力 ----
-
-function emptySaleForm() {
-  return {
-    date: new Date().toISOString().slice(0, 10), category: SALES_CATEGORIES[0], propertyId: '', roomId: '', content: '', amount: 0, depositAmount: '',
-    paymentMethod: '', receivedDate: '', taxType: TAX_TYPES[0],
-  }
-}
-
-function SalesSection({ allRecords, sales, periodLocks, onChanged, canEdit, user, simpleUI }) {
-  const [form, setForm] = useState(emptySaleForm())
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
-  const [selected, setSelected] = useState([])
-  const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
-  const [periodMonth, setPeriodMonth] = useState('all')
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState(null)
-  const fileInputRef = useRef(null)
-
-  const properties = allRecords.properties || []
-  const rooms = allRecords.rooms || []
-  const owners = allRecords.owners || []
-  const roomOptions = rooms.filter((r) => r.propertyId === form.propertyId)
-
-  const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
-  const roomLabel = (id) => rooms.find((r) => r.id === id)?.roomNumber || ''
-  const ownerName = (id) => owners.find((o) => o.id === id)?.name || ''
-
-  const filtered = sales
-    .filter((s) => inPeriod(s.date, periodYear, periodMonth))
-    .filter((s) => !categoryFilter || s.category === categoryFilter)
-    .filter((s) => {
-      if (!search) return true
-      const text = `${propertyName(s.propertyId)} ${s.content} ${s.category}`.toLowerCase()
-      return text.includes(search.toLowerCase())
-    })
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-  const periodTotal = filtered.reduce((z, s) => z + s.amount, 0)
-
-  const exportCsv = () => {
-    const headers = ['日付', '勘定科目', '物件', '号室', 'オーナー', '内容', '金額', '消費税区分', '支払方法', '実際の入金日']
-    const rows = filtered.map((s) => [s.date, s.category, propertyName(s.propertyId), roomLabel(s.roomId), ownerName(s.ownerId), s.content, s.amount, s.taxType, s.paymentMethod, s.receivedDate])
-    downloadCsv(`売上_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
-  }
-
-  const openImport = () => fileInputRef.current?.click()
-
-  const handleImportFile = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setImporting(true)
-    setImportResult(null)
-    try {
-      const text = await file.text()
-      const csvRows = parseCsv(text)
-      if (csvRows.length < 2) {
-        setImportResult({ ok: 0, errors: ['データ行が見つかりません。1行目に見出し、2行目以降にデータを入れてください。'] })
-        return
-      }
-      const header = csvRows[0].map((h) => h.trim())
-      const col = (name) => header.indexOf(name)
-      const dateIdx = col('日付'), catIdx = col('勘定科目') > -1 ? col('勘定科目') : col('カテゴリ'), propIdx = col('物件'), roomIdx = col('号室'), contentIdx = col('内容'), amountIdx = col('金額')
-      const taxTypeIdx = col('消費税区分'), paymentMethodIdx = col('支払方法'), receivedDateIdx = col('実際の入金日')
-      if (dateIdx === -1 || catIdx === -1 || amountIdx === -1) {
-        setImportResult({ ok: 0, errors: ['見出し行に「日付」「勘定科目」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
-        return
-      }
-
-      const toInsert = []
-      const errors = []
-      csvRows.slice(1).forEach((r, i) => {
-        const lineNo = i + 2
-        const rawDate = r[dateIdx] || ''
-        const date = normalizeDate(rawDate)
-        const category = (r[catIdx] || '').trim()
-        const propName = propIdx > -1 ? (r[propIdx] || '').trim() : ''
-        const roomNumber = roomIdx > -1 ? (r[roomIdx] || '').trim() : ''
-        const content = contentIdx > -1 ? (r[contentIdx] || '').trim() : ''
-        const amount = parseAmountCell(amountIdx > -1 ? r[amountIdx] : '')
-        const taxType = taxTypeIdx > -1 ? (r[taxTypeIdx] || '').trim() : ''
-        const paymentMethod = paymentMethodIdx > -1 ? (r[paymentMethodIdx] || '').trim() : ''
-        const receivedDate = receivedDateIdx > -1 ? normalizeDate(r[receivedDateIdx] || '') : ''
-
-        if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
-        if (!SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: 勘定科目「${category}」が見つかりません`); return }
-        if (Number.isNaN(amount) || amount < 0) { errors.push(`${lineNo}行目: 金額が正しくありません(${r[amountIdx] || ''})`); return }
-
-        let propertyId = ''
-        if (propName) {
-          const p = properties.find((x) => x.name === propName)
-          if (!p) { errors.push(`${lineNo}行目: 物件「${propName}」が見つかりません`); return }
-          propertyId = p.id
-        }
-        let roomId = ''
-        if (roomNumber) {
-          const rm = rooms.find((x) => x.propertyId === propertyId && x.roomNumber === roomNumber)
-          if (!rm) { errors.push(`${lineNo}行目: 号室「${roomNumber}」が見つかりません`); return }
-          roomId = rm.id
-        }
-        const property = properties.find((p) => p.id === propertyId)
-        toInsert.push(saleToRow({
-          date, category, propertyId, roomId, ownerId: property?.ownerId || '', content, amount, source: 'manual',
-          taxType: TAX_TYPES.includes(taxType) ? taxType : '', paymentMethod, receivedDate,
-        }))
-      })
-
-      if (toInsert.length) {
-        const chunkSize = 200
-        for (let i = 0; i < toInsert.length; i += chunkSize) {
-          const { error: err } = await supabase.from('sales').insert(toInsert.slice(i, i + chunkSize))
-          if (err) throw err
-        }
-        await onChanged()
-        await logEdit({ user, tableLabel: '売上', action: '追加', summary: `CSVインポートで${toInsert.length}件を追加` })
-      }
-      setImportResult({ ok: toInsert.length, errors })
-    } catch (e) {
-      setImportResult({ ok: 0, errors: ['インポートに失敗しました: ' + e.message] })
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  const submit = async () => {
-    if (!form.date || !form.amount) { setError('日付と金額は必須です'); return }
-    if (Number(form.amount) < 0) { setError('金額にマイナスの金額は入力できません'); return }
-    if (isMonthLocked(periodLocks, form.date)) { setError(`${form.date.slice(0, 7)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
-    setSaving(true)
-    setError('')
-    try {
-      const property = properties.find((p) => p.id === form.propertyId)
-      const row = saleToRow({ ...form, ownerId: property?.ownerId || '', source: 'manual' })
-      const { error: err } = await supabase.from('sales').insert(row)
-      if (err) throw err
-
-      // レントスペース: 予約売上と実際の入金額の差額を、サイト・決済手数料として経費に自動計上する
-      if (form.category === 'レントスペース' && form.depositAmount !== '') {
-        const fee = Number(form.amount) - Number(form.depositAmount)
-        if (fee > 0) {
-          const { error: feeErr } = await supabase.from('expenses').insert({
-            date: form.date,
-            property_id: form.propertyId || null,
-            room_id: form.roomId || null,
-            category: 'レントスペース',
-            content: 'サイト・決済手数料(自動計算)',
-            payee: '(サイト手数料)',
-            amount: fee,
-          })
-          if (feeErr) throw feeErr
-        }
-      }
-
-      await onChanged()
-      await logEdit({ user, tableLabel: '売上', action: '追加', summary: `${form.category} ${form.content || ''} ${yen(form.amount)}` })
-      setForm(emptySaleForm())
-    } catch (e) {
-      setError('保存に失敗しました: ' + e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const deleteSale = async (sale) => {
-    if (!confirm('削除しますか?')) return
-    const { error: err } = await supabase.from('sales').delete().eq('id', sale.id)
-    if (err) { alert('削除に失敗しました: ' + err.message); return }
-    await onChanged()
-    await logEdit({ user, tableLabel: '売上', action: '削除', summary: `${sale.category} ${sale.content || ''} ${yen(sale.amount)}` })
-  }
-
-  const toggleSelect = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
-  const toggleAll = () => setSelected(selected.length === filtered.length ? [] : filtered.map((s) => s.id))
-
-  const copySelected = async () => {
-    if (!selected.length) { alert('コピーする行を選択してください'); return }
-    const newDate = window.prompt('複製先の日付を YYYY-MM-DD で入力してください', new Date().toISOString().slice(0, 10))
-    if (!newDate) return
-    if (isMonthLocked(periodLocks, newDate)) {
-      alert(`${newDate.slice(0, 7)}分は月次締め済みのため複製できません。管理者に月次締めの解除を依頼してください。`)
-      return
-    }
-    setSaving(true)
-    try {
-      let count = 0
-      for (const id of selected) {
-        const s = sales.find((x) => x.id === id)
-        if (!s || s.source !== 'manual') continue
-        const row = saleToRow({ ...s, date: newDate, source: 'manual' })
-        const { error: err } = await supabase.from('sales').insert(row)
-        if (err) throw err
-        count++
-      }
-      await onChanged()
-      await logEdit({ user, tableLabel: '売上', action: '追加', summary: `${count}件を${newDate}付けで複製` })
-      setSelected([])
-    } catch (e) {
-      alert('コピーに失敗しました: ' + e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div>
-      {canEdit ? (
-        <div className="master-form">
-          <h3>売上入力</h3>
-          {simpleUI && <MonthLockBadge periodLocks={periodLocks} dateOrMonth={form.date} />}
-          <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-          <div className="form-row">
-            <label>物件</label>
-            <SearchableSelect
-              value={form.propertyId}
-              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
-              options={properties.map((p) => ({ id: p.id, label: p.name }))}
-            />
-          </div>
-          {form.propertyId && (
-            <div className="form-row">
-              <label>号室</label>
-              <SearchableSelect
-                value={form.roomId}
-                onChange={(id) => setForm({ ...form, roomId: id })}
-                options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
-              />
-            </div>
-          )}
-          <div className="form-row">
-            <label>勘定科目</label>
-            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /></div>
-          <div className="form-row"><label>金額(予約売上)</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-          {form.category === 'レントスペース' && (
-            <div className="form-row">
-              <label>実際の入金額</label>
-              <div>
-                <input type="number" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })} style={{ width: 120 }} />
-                <div className="mini" style={{ color: '#6b6167' }}>予約サイトからの実際の振込額。金額(予約売上)より少ない場合、差額を「サイト・決済手数料」として経費に自動登録します。分からない場合は空欄でOK。</div>
-              </div>
-            </div>
-          )}
-          <div className="form-row">
-            <label>消費税区分</label>
-            <select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })}>
-              {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label>支払方法</label>
-            <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
-              <option value="">(未選択)</option>
-              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label>実際の入金日</label>
-            <div>
-              <input type="date" value={form.receivedDate} onChange={(e) => setForm({ ...form, receivedDate: e.target.value })} />
-              <div className="mini" style={{ color: '#6b6167' }}>計上日と実際の入金日がずれる場合のみ入力(空欄なら計上日と同じ扱い)。</div>
-            </div>
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="form-actions">
-            <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
-          </div>
-        </div>
-      ) : (
-        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-          閲覧のみできます(編集権限がありません)
-        </div>
-      )}
-
-      <div className="master-toolbar">
-        <PeriodFilter year={periodYear} month={periodMonth} onYear={setPeriodYear} onMonth={setPeriodMonth} />
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-          <option value="">全勘定科目</option>
-          {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <button className="btn-secondary" onClick={exportCsv}>CSVダウンロード</button>
-        {canEdit && (
-          <>
-            <button className="btn-secondary" onClick={openImport} disabled={importing}>{importing ? 'インポート中...' : 'CSVインポート'}</button>
-            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
-            <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
-            <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
-          </>
-        )}
-      </div>
-      {importResult && (
-        <div className="mini" style={{ marginBottom: 8, color: importResult.errors.length ? '#a11615' : '#6b6167' }}>
-          {importResult.ok > 0 && <div>{importResult.ok}件を追加しました。</div>}
-          {importResult.errors.length > 0 && (
-            <div>
-              {importResult.errors.length}件のエラー:
-              <ul style={{ margin: '4px 0 0 18px' }}>
-                {importResult.errors.slice(0, 20).map((msg, i) => <li key={i}>{msg}</li>)}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
-      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
-        CSVインポートは「CSVダウンロード」した形式(日付・勘定科目・物件・号室・オーナー・内容・金額)のまま、行を追加・編集して読み込んでください。勘定科目・物件・号室は既存の表記と完全一致している必要があります。
-      </div>
-
-      <table className="master-table">
-        <thead>
-          <tr>
-            <th></th><th>日付</th><th>勘定科目</th><th>物件</th><th>号室</th><th>オーナー</th><th>内容</th><th className="amount">金額</th>
-            {!simpleUI && (<><th className="amount">税抜金額</th><th className="amount">消費税額</th></>)}
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((s) => {
-            const { exTax, tax } = taxBreakdown(s.amount, s.taxType)
-            return (
-              <tr key={s.id}>
-                <td>{canEdit && <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSelect(s.id)} />}</td>
-                <td>{s.date}</td>
-                <td>{s.category}{s.source !== 'manual' && <span className="mini"> (自動)</span>}</td>
-                <td>{propertyName(s.propertyId)}</td>
-                <td>{roomLabel(s.roomId)}</td>
-                <td>{ownerName(s.ownerId)}</td>
-                <td>{s.content}</td>
-                <td className="amount">
-                  {s.amount.toLocaleString()}
-                  {simpleUI && (
-                    <DetailsToggle label="内訳">
-                      税抜金額: {exTax.toLocaleString()}<br />消費税額: {tax.toLocaleString()}
-                    </DetailsToggle>
-                  )}
-                </td>
-                {!simpleUI && (<><td className="amount">{exTax.toLocaleString()}</td><td className="amount">{tax.toLocaleString()}</td></>)}
-                <td>{canEdit && s.source === 'manual' && <button className="icon-btn" onClick={() => deleteSale(s)}>🗑</button>}</td>
-              </tr>
-            )
-          })}
-          {filtered.length === 0 && <tr><td colSpan={simpleUI ? 9 : 11} className="empty-row">データがありません</td></tr>}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-// ---- 経費一覧・入力 ----
-
-function emptyExpenseForm() {
-  return {
-    date: new Date().toISOString().slice(0, 10), propertyId: '', roomId: '', category: '', content: '', payee: '', amount: 0,
-    payeeId: '', payeeType: '', paymentMethod: '', hasReceipt: false, paidDate: '', taxType: TAX_TYPES[0],
-    isCapitalExpenditure: false,
-  }
-}
-
-function ExpensesSection({ allRecords, expenses, periodLocks, onChanged, canEdit, user, simpleUI }) {
-  const [form, setForm] = useState(emptyExpenseForm())
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState([])
-  const [periodYear, setPeriodYear] = useState(currentFiscalStartYear())
-  const [periodMonth, setPeriodMonth] = useState('all')
-  const [importing, setImporting] = useState(false)
-  const [importResult, setImportResult] = useState(null)
-  const [showPdfImport, setShowPdfImport] = useState(false)
-  const fileInputRef = useRef(null)
-  const payeeListId = useId()
-
-  const properties = allRecords.properties || []
-  const rooms = allRecords.rooms || []
-  const clients = allRecords.clients || []
-  const vendors = allRecords.vendors || []
-  const payeeOptions = [
-    ...vendors.map((v) => ({ id: v.id, type: 'vendor', label: v.name })),
-    ...clients.map((c) => ({ id: c.id, type: 'client', label: c.name })),
-  ]
-  const roomOptions = rooms.filter((r) => r.propertyId === form.propertyId)
-  const propertyName = (id) => properties.find((p) => p.id === id)?.name || ''
-  const roomLabel = (id) => rooms.find((r) => r.id === id)?.roomNumber || ''
-
-  const filtered = expenses
-    .filter((e) => inPeriod(e.date, periodYear, periodMonth))
-    .filter((e) => {
-      if (!search) return true
-      const text = `${propertyName(e.propertyId)} ${e.content} ${e.category} ${e.payee}`.toLowerCase()
-      return text.includes(search.toLowerCase())
-    })
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-  const periodTotal = filtered.reduce((z, e) => z + e.amount, 0)
-
-  const exportCsv = () => {
-    const headers = ['日付', '物件', '号室', '勘定科目', '内容', '支払先', '金額', '消費税区分', '支払方法', '実際の支払日', '領収書等の保管', '資本的支出']
-    const rows = filtered.map((e) => [e.date, propertyName(e.propertyId), roomLabel(e.roomId), e.category, e.content, e.payee, e.amount, e.taxType, e.paymentMethod, e.paidDate, e.hasReceipt ? '有' : '', e.isCapitalExpenditure ? '該当' : ''])
-    downloadCsv(`経費_${fiscalYearLabel(periodYear)}.csv`, headers, rows)
-  }
-
-  const openImport = () => fileInputRef.current?.click()
-
-  const handleImportFile = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setImporting(true)
-    setImportResult(null)
-    try {
-      const text = await file.text()
-      const csvRows = parseCsv(text)
-      if (csvRows.length < 2) {
-        setImportResult({ ok: 0, errors: ['データ行が見つかりません。1行目に見出し、2行目以降にデータを入れてください。'] })
-        return
-      }
-      const header = csvRows[0].map((h) => h.trim())
-      const col = (name) => header.indexOf(name)
-      const dateIdx = col('日付'), propIdx = col('物件'), roomIdx = col('号室'), catIdx = col('勘定科目') > -1 ? col('勘定科目') : col('カテゴリ'), contentIdx = col('内容'), payeeIdx = col('支払先'), amountIdx = col('金額')
-      const taxTypeIdx = col('消費税区分'), paymentMethodIdx = col('支払方法'), paidDateIdx = col('実際の支払日'), hasReceiptIdx = col('領収書等の保管')
-      const isCapitalExpenditureIdx = col('資本的支出')
-      if (dateIdx === -1 || amountIdx === -1) {
-        setImportResult({ ok: 0, errors: ['見出し行に「日付」「金額」の列が見つかりません。「CSVダウンロード」した形式のまま編集してください。'] })
-        return
-      }
-
-      const toInsert = []
-      const errors = []
-      csvRows.slice(1).forEach((r, i) => {
-        const lineNo = i + 2
-        const rawDate = r[dateIdx] || ''
-        const date = normalizeDate(rawDate)
-        const category = catIdx > -1 ? (r[catIdx] || '').trim() : ''
-        const propName = propIdx > -1 ? (r[propIdx] || '').trim() : ''
-        const roomNumber = roomIdx > -1 ? (r[roomIdx] || '').trim() : ''
-        const content = contentIdx > -1 ? (r[contentIdx] || '').trim() : ''
-        const payee = payeeIdx > -1 ? (r[payeeIdx] || '').trim() : ''
-        const amount = parseAmountCell(amountIdx > -1 ? r[amountIdx] : '')
-        const taxType = taxTypeIdx > -1 ? (r[taxTypeIdx] || '').trim() : ''
-        const paymentMethod = paymentMethodIdx > -1 ? (r[paymentMethodIdx] || '').trim() : ''
-        const paidDate = paidDateIdx > -1 ? normalizeDate(r[paidDateIdx] || '') : ''
-        const hasReceipt = hasReceiptIdx > -1 ? ['有', 'あり', 'true', '1'].includes((r[hasReceiptIdx] || '').trim()) : false
-        const isCapitalExpenditure = isCapitalExpenditureIdx > -1 ? ['該当', '有', 'あり', 'true', '1'].includes((r[isCapitalExpenditureIdx] || '').trim()) : false
-
-        if (!date) { errors.push(`${lineNo}行目: 日付が読み取れません(${rawDate})`); return }
-        if (category && !SALES_CATEGORIES.includes(category)) { errors.push(`${lineNo}行目: 勘定科目「${category}」が見つかりません`); return }
-        if (Number.isNaN(amount) || amount < 0) { errors.push(`${lineNo}行目: 金額が正しくありません(${r[amountIdx] || ''})`); return }
-
-        let propertyId = ''
-        if (propName) {
-          const p = properties.find((x) => x.name === propName)
-          if (!p) { errors.push(`${lineNo}行目: 物件「${propName}」が見つかりません`); return }
-          propertyId = p.id
-        }
-        let roomId = ''
-        if (roomNumber) {
-          const rm = rooms.find((x) => x.propertyId === propertyId && x.roomNumber === roomNumber)
-          if (!rm) { errors.push(`${lineNo}行目: 号室「${roomNumber}」が見つかりません`); return }
-          roomId = rm.id
-        }
-        const payeeMatch = payee ? payeeOptions.find((o) => o.label === payee) : null
-        toInsert.push(expenseToRow({
-          date, propertyId, roomId, category, content, payee, amount,
-          payeeId: payeeMatch?.id || '', payeeType: payeeMatch?.type || '',
-          taxType: TAX_TYPES.includes(taxType) ? taxType : '', paymentMethod, paidDate, hasReceipt, isCapitalExpenditure,
-        }))
-      })
-
-      if (toInsert.length) {
-        const chunkSize = 200
-        for (let i = 0; i < toInsert.length; i += chunkSize) {
-          const { error: err } = await supabase.from('expenses').insert(toInsert.slice(i, i + chunkSize))
-          if (err) throw err
-        }
-        await onChanged()
-        await logEdit({ user, tableLabel: '経費', action: '追加', summary: `CSVインポートで${toInsert.length}件を追加` })
-      }
-      setImportResult({ ok: toInsert.length, errors })
-    } catch (e) {
-      setImportResult({ ok: 0, errors: ['インポートに失敗しました: ' + e.message] })
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  // 支払先: 業者・取引先マスタと完全一致すればリンク(payeeId/payeeType)、一致しなければ自由入力のまま保存
-  // あわせて、同じ支払先の直近の経費があれば、勘定科目を候補として自動で入れる(すでに勘定科目を選んでいる場合は上書きしない)
-  const handlePayeeChange = (text) => {
-    const match = payeeOptions.find((o) => o.label === text)
-    const payeeId = match?.id || ''
-    const payeeType = match?.type || ''
-    let category = form.category
-    if (!category) {
-      const past = expenses
-        .filter((e) => (payeeId ? e.payeeId === payeeId : e.payee === text))
-        .sort((a, b) => (a.date < b.date ? 1 : -1))
-      if (past.length) category = past[0].category || ''
-    }
-    setForm({ ...form, payee: text, payeeId, payeeType, category })
-  }
-
-  const submit = async () => {
-    if (!form.date || !form.amount) { setError('日付と金額は必須です'); return }
-    if (Number(form.amount) < 0) { setError('金額にマイナスの金額は入力できません'); return }
-    if (isMonthLocked(periodLocks, form.date)) { setError(`${form.date.slice(0, 7)}分は月次締め済みのため登録できません。管理者に月次締めの解除を依頼してください。`); return }
-    setSaving(true)
-    setError('')
-    try {
-      const { error: err } = await supabase.from('expenses').insert(expenseToRow(form))
-      if (err) throw err
-      await onChanged()
-      await logEdit({ user, tableLabel: '経費', action: '追加', summary: `${form.category || ''} ${form.content || ''} ${yen(form.amount)}` })
-      setForm(emptyExpenseForm())
-    } catch (e) {
-      setError('保存に失敗しました: ' + e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const deleteExpense = async (expense) => {
-    if (!confirm('削除しますか?')) return
-    const { error: err } = await supabase.from('expenses').delete().eq('id', expense.id)
-    if (err) { alert('削除に失敗しました: ' + err.message); return }
-    await onChanged()
-    await logEdit({ user, tableLabel: '経費', action: '削除', summary: `${expense.category || ''} ${expense.content || ''} ${yen(expense.amount)}` })
-  }
-
-  const toggleSelect = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
-  const toggleAll = () => setSelected(selected.length === filtered.length ? [] : filtered.map((e) => e.id))
-
-  const copySelected = async () => {
-    if (!selected.length) { alert('コピーする行を選択してください'); return }
-    const newDate = window.prompt('複製先の日付を YYYY-MM-DD で入力してください', new Date().toISOString().slice(0, 10))
-    if (!newDate) return
-    if (isMonthLocked(periodLocks, newDate)) {
-      alert(`${newDate.slice(0, 7)}分は月次締め済みのため複製できません。管理者に月次締めの解除を依頼してください。`)
-      return
-    }
-    setSaving(true)
-    try {
-      let count = 0
-      for (const id of selected) {
-        const e = expenses.find((x) => x.id === id)
-        if (!e) continue
-        const { error: err } = await supabase.from('expenses').insert(expenseToRow({ ...e, date: newDate }))
-        if (err) throw err
-        count++
-      }
-      await onChanged()
-      await logEdit({ user, tableLabel: '経費', action: '追加', summary: `${count}件を${newDate}付けで複製` })
-      setSelected([])
-    } catch (e) {
-      alert('コピーに失敗しました: ' + e.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div>
-      {canEdit ? (
-        <div className="master-form">
-          <h3>経費入力</h3>
-          {simpleUI && <MonthLockBadge periodLocks={periodLocks} dateOrMonth={form.date} />}
-          <div className="form-row"><label>日付</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-          <div className="form-row">
-            <label>物件</label>
-            <SearchableSelect
-              value={form.propertyId}
-              onChange={(id) => setForm({ ...form, propertyId: id, roomId: '' })}
-              options={properties.map((p) => ({ id: p.id, label: p.name }))}
-            />
-          </div>
-          {form.propertyId && (
-            <div className="form-row">
-              <label>号室</label>
-              <SearchableSelect
-                value={form.roomId}
-                onChange={(id) => setForm({ ...form, roomId: id })}
-                options={roomOptions.map((r) => ({ id: r.id, label: r.roomNumber }))}
-              />
-            </div>
-          )}
-          <div className="form-row">
-            <label>勘定科目</label>
-            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              <option value="">(未選択)</option>
-              {SALES_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div className="form-row"><label>内容</label><input value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} placeholder="例: 日常清掃 外注費" /></div>
-          <div className="form-row">
-            <label>支払先</label>
-            <div>
-              <input
-                list={payeeListId}
-                value={form.payee}
-                onChange={(e) => handlePayeeChange(e.target.value)}
-                autoComplete="off"
-                placeholder="業者・取引先マスタから入力して検索、または自由入力"
-              />
-              <datalist id={payeeListId}>
-                {payeeOptions.map((o) => <option key={`${o.type}-${o.id}`} value={o.label} />)}
-              </datalist>
-              {form.payeeId && <div className="mini" style={{ color: '#6b6167' }}>{form.payeeType === 'vendor' ? '業者' : '取引先'}マスタとリンクしています</div>}
-            </div>
-          </div>
-          <div className="form-row"><label>金額</label><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-          <div className="form-row">
-            <label>消費税区分</label>
-            <select value={form.taxType} onChange={(e) => setForm({ ...form, taxType: e.target.value })}>
-              {TAX_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label>支払方法</label>
-            <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
-              <option value="">(未選択)</option>
-              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div className="form-row">
-            <label>実際の支払日</label>
-            <input type="date" value={form.paidDate} onChange={(e) => setForm({ ...form, paidDate: e.target.value })} />
-          </div>
-          <div className="form-row">
-            <label>領収書等の保管</label>
-            <input
-              type="checkbox"
-              style={{ width: 18, height: 18 }}
-              checked={form.hasReceipt}
-              onChange={(e) => setForm({ ...form, hasReceipt: e.target.checked })}
-            />
-          </div>
-          <div className="form-row">
-            <label>資本的支出に該当</label>
-            <div>
-              <input
-                type="checkbox"
-                style={{ width: 18, height: 18 }}
-                checked={form.isCapitalExpenditure}
-                onChange={(e) => setForm({ ...form, isCapitalExpenditure: e.target.checked })}
-              />
-              <div className="mini" style={{ color: '#6b6167' }}>
-                修繕費ではなく、資産計上して数年に分けて経費化すべき支出(大規模修繕・改良工事など)の場合にチェックしてください
-              </div>
-            </div>
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <div className="form-actions">
-            <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? '登録中...' : '登録'}</button>
-          </div>
-        </div>
-      ) : (
-        <div className="mini" style={{ marginBottom: 12, color: '#6b6167' }}>
-          閲覧のみできます(編集権限がありません)
-        </div>
-      )}
-
-      {canEdit && showPdfImport && (
-        <ExpensePdfImportPanel
-          allRecords={allRecords}
-          expenses={expenses}
-          user={user}
-          onImported={onChanged}
-          onClose={() => setShowPdfImport(false)}
-        />
-      )}
-
-      <div className="master-toolbar">
-        <PeriodFilter year={periodYear} month={periodMonth} onYear={setPeriodYear} onMonth={setPeriodMonth} />
-        <input className="search-input" placeholder="検索..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <button className="btn-secondary" onClick={exportCsv}>CSVダウンロード</button>
-        {canEdit && (
-          <>
-            <button className="btn-secondary" onClick={openImport} disabled={importing}>{importing ? 'インポート中...' : 'CSVインポート'}</button>
-            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportFile} />
-            {!showPdfImport && (
-              <button className="btn-secondary" onClick={() => setShowPdfImport(true)}>PDFから経費を取り込む</button>
-            )}
-            <button className="btn-secondary" onClick={toggleAll}>{selected.length === filtered.length && filtered.length ? '全解除' : '全選択'}</button>
-            <button className="btn-primary" onClick={copySelected} disabled={saving}>選択したものをコピー</button>
-          </>
-        )}
-      </div>
-      {importResult && (
-        <div className="mini" style={{ marginBottom: 8, color: importResult.errors.length ? '#a11615' : '#6b6167' }}>
-          {importResult.ok > 0 && <div>{importResult.ok}件を追加しました。</div>}
-          {importResult.errors.length > 0 && (
-            <div>
-              {importResult.errors.length}件のエラー:
-              <ul style={{ margin: '4px 0 0 18px' }}>
-                {importResult.errors.slice(0, 20).map((msg, i) => <li key={i}>{msg}</li>)}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>表示中の合計: {yen(periodTotal)}({filtered.length}件)</div>
-      <div className="mini" style={{ marginBottom: 8, color: '#6b6167' }}>
-        CSVインポートは「CSVダウンロード」した形式(日付・物件・号室・勘定科目・内容・支払先・金額)のまま、行を追加・編集して読み込んでください。物件・号室・勘定科目は既存の表記と完全一致している必要があります。
-      </div>
-
-      <table className="master-table">
-        <thead>
-          <tr>
-            <th></th><th>日付</th><th>物件</th><th>号室</th><th>勘定科目</th><th>内容</th><th>支払先</th><th className="amount">金額</th>
-            {!simpleUI && (<><th className="amount">税抜金額</th><th className="amount">消費税額</th></>)}
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((e) => {
-            const { exTax, tax } = taxBreakdown(e.amount, e.taxType)
-            return (
-              <tr key={e.id}>
-                <td>{canEdit && <input type="checkbox" checked={selected.includes(e.id)} onChange={() => toggleSelect(e.id)} />}</td>
-                <td>{e.date}</td>
-                <td>{propertyName(e.propertyId)}</td>
-                <td>{roomLabel(e.roomId)}</td>
-                <td>{e.category}</td>
-                <td>{e.content}</td>
-                <td>{e.payee}</td>
-                <td className="amount">
-                  {e.amount.toLocaleString()}
-                  {simpleUI && (
-                    <DetailsToggle label="内訳">
-                      税抜金額: {exTax.toLocaleString()}<br />消費税額: {tax.toLocaleString()}
-                    </DetailsToggle>
-                  )}
-                </td>
-                {!simpleUI && (<><td className="amount">{exTax.toLocaleString()}</td><td className="amount">{tax.toLocaleString()}</td></>)}
-                <td>{canEdit && <button className="icon-btn" onClick={() => deleteExpense(e)}>🗑</button>}</td>
-              </tr>
-            )
-          })}
-          {filtered.length === 0 && <tr><td colSpan={simpleUI ? 9 : 11} className="empty-row">データがありません</td></tr>}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 const BASE_TOP_TABS = [
   { key: 'dashboard', label: 'ダッシュボード' },
   { key: 'master', label: 'マスタ管理' },
   { key: 'rentPayments', label: '家賃入金' },
-  { key: 'sales', label: '売上' },
-  { key: 'expenses', label: '経費' },
+  { key: 'transactions', label: '取引管理' },
   { key: 'trustFunds', label: '預り金・立替金' },
   { key: 'ownerSettlements', label: 'オーナー精算・送金' },
   { key: 'repairs', label: '修繕管理' },
@@ -2691,6 +1986,7 @@ const DASHBOARD_SUB_TABS = [
   { key: 'overview', label: '概要' },
   { key: 'storeAnalytics', label: '店舗別実績' },
   { key: 'report', label: '決算レポート' },
+  { key: 'caseProfit', label: '案件別収支' },
 ]
 
 const PERM_FIELD_MAP = {
@@ -3033,6 +2329,9 @@ export default function App() {
             <MasterImportPanel
               allRecords={allRecords}
               rentPayments={rentPayments}
+              periodLocks={periodLocks}
+              managementAcquisitions={managementAcquisitions}
+              managementAcquisitionRates={managementAcquisitionRates}
               onChanged={loadAll}
               canEditMaster={canEdit('master')}
               canEditRentPayments={canEdit('rentPayments')}
@@ -3061,24 +2360,15 @@ export default function App() {
               user={session.user}
             />
           )}
-          {!loading && !loadError && topTab === 'sales' && (
-            <SalesSection
-              allRecords={allRecords}
+          {!loading && !loadError && topTab === 'transactions' && (
+            <TransactionsSection
               sales={sales}
-              periodLocks={periodLocks}
-              onChanged={loadAll}
-              canEdit={canEdit('sales')}
-              simpleUI={!!profile?.is_simple_ui}
-              user={session.user}
-            />
-          )}
-          {!loading && !loadError && topTab === 'expenses' && (
-            <ExpensesSection
-              allRecords={allRecords}
               expenses={expenses}
+              allRecords={allRecords}
               periodLocks={periodLocks}
               onChanged={loadAll}
-              canEdit={canEdit('expenses')}
+              canEditSales={canEdit('sales')}
+              canEditExpenses={canEdit('expenses')}
               simpleUI={!!profile?.is_simple_ui}
               user={session.user}
             />
@@ -3165,7 +2455,27 @@ export default function App() {
             />
           )}
           {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'report' && (
-            <ReportSection sales={sales} expenses={expenses} budgets={budgets} onChanged={loadAll} isAdmin={!!profile?.is_admin} simpleUI={!!profile?.is_simple_ui} />
+            <ReportSection
+              sales={sales}
+              expenses={expenses}
+              budgets={budgets}
+              rentPayments={rentPayments}
+              ownerSettlements={ownerSettlements}
+              repairs={repairs}
+              allRecords={allRecords}
+              arrearsMonthsCount={arrearsMonthsCount}
+              activeTenantsFor={activeTenantsFor}
+              onChanged={loadAll}
+              isAdmin={!!profile?.is_admin}
+              simpleUI={!!profile?.is_simple_ui}
+            />
+          )}
+          {!loading && !loadError && topTab === 'dashboard' && dashboardTab === 'caseProfit' && (
+            <CaseProfitSection
+              sales={sales}
+              expenses={expenses}
+              allRecords={allRecords}
+            />
           )}
           {topTab === 'admin' && profile?.is_admin && (
             <>

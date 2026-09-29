@@ -988,6 +988,7 @@ export default function TransactionsSection({ sales, expenses, allRecords, perio
         <ExpensePdfImportPanel
           allRecords={allRecords}
           expenses={expenses}
+          periodLocks={periodLocks}
           user={user}
           onImported={onChanged}
           onClose={() => setShowPdfImport(false)}

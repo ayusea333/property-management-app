@@ -5,8 +5,10 @@ import {
   ownerToRow, propertyToRow, roomToRow, residentToRow, contractToRow, CONTRACTOR_TYPES,
 } from './lib/masters'
 import { trustFundToRow } from './lib/trustFunds'
-import { rentPaymentToRow } from './lib/rentPayments'
+import { rentPaymentToRow, formatMonthLabel } from './lib/rentPayments'
 import { logEdit } from './lib/editLog'
+import { isMonthLocked } from './components/SimpleUI'
+import { postManagementFeeIfNeeded, postGroupCommissionIfNeeded } from './lib/autoPosting'
 
 // CSVインポート用: "2026/9/1" 「2026-09-01」などをYYYY-MM-DDに正規化する。読めない場合は空文字。
 function normalizeDate(s) {
@@ -303,15 +305,21 @@ function MasterCsvImportPanel({ allRecords, onChanged, canEdit, user }) {
 
 // ---- 家賃入金実績 CSV取込 ----
 
-function RentPaymentCsvImportPanel({ allRecords, rentPayments, onChanged, canEdit, user }) {
+function RentPaymentCsvImportPanel({
+  allRecords, rentPayments, periodLocks, managementAcquisitions, managementAcquisitionRates,
+  onChanged, canEdit, user,
+}) {
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
   const fileInputRef = useRef(null)
 
   const properties = allRecords.properties || []
   const rooms = allRecords.rooms || []
+  const owners = allRecords.owners || []
   const residents = allRecords.residents || []
   const contracts = allRecords.contracts || []
+  const tenants = allRecords.tenants || [] // 契約+入居者名をまとめた一覧(App.jsxのloadAllで作成)
+  const referralStores = allRecords.referralStores || []
 
   const downloadTemplate = () => {
     downloadCsv('家賃入金実績.csv', PAYMENT_HEADERS, [
@@ -372,6 +380,10 @@ function RentPaymentCsvImportPanel({ allRecords, rentPayments, onChanged, canEdi
         const note = idx.note > -1 ? (r[idx.note] || '').trim() : ''
 
         if (!targetMonth) { errors.push(`${lineNo}行目: 対象月が読み取れません(${r[idx.targetMonth] || ''})`); return }
+        if (isMonthLocked(periodLocks, targetMonth)) {
+          errors.push(`${lineNo}行目: ${formatMonthLabel(targetMonth)}分は月次締め済みのため取り込めません(管理者に月次締めの解除を依頼してください)`)
+          return
+        }
         const room = roomByKey.get(`${propertyNameVal}|${roomNumber}`)
         if (!room) { errors.push(`${lineNo}行目: 物件「${propertyNameVal}」号室「${roomNumber}」が見つかりません(先に物件・部屋の取込を行ってください)`); return }
         const contract = contractByRoomAndName.get(`${room.id}|${residentNameVal}`)
@@ -421,6 +433,30 @@ function RentPaymentCsvImportPanel({ allRecords, rentPayments, onChanged, canEdi
           const { error: err } = await supabase.from('rent_payments').upsert(dedupedUpsert.slice(i, i + chunkSize), { onConflict: 'tenant_id,target_month' })
           if (err) throw err
         }
+
+        // 1件ずつの入金確定(家賃入金画面)と同じく、管理料(自動)・グループ会社支払(自動)を計上する。
+        // ここを飛ばすと、CSV取込だけ通常の入金確定と結果が変わってしまうため必須。
+        let postingErrorCount = 0
+        for (const row of dedupedUpsert) {
+          const tenant = tenants.find((t) => t.id === row.tenant_id)
+          if (!tenant) continue
+          const room = rooms.find((rm) => rm.id === tenant.roomId)
+          const property = room ? properties.find((p) => p.id === room.propertyId) : null
+          const owner = property ? owners.find((o) => o.id === property.ownerId) : null
+          try {
+            await postManagementFeeIfNeeded({
+              tenant, room, property, owner, targetMonth: row.target_month, paymentDate: row.payment_date,
+            })
+            await postGroupCommissionIfNeeded({
+              tenant, room, property, targetMonth: row.target_month, paymentDate: row.payment_date,
+              managementAcquisitions, managementAcquisitionRates, referralStores,
+            })
+          } catch (e) {
+            postingErrorCount++
+            errors.push(`${tenant.name}様 ${formatMonthLabel(row.target_month)}分: 入金は記録しましたが、管理料等の自動計上に失敗しました(${e.message})。取引管理から手動で確認してください。`)
+          }
+        }
+
         await onChanged()
         await logEdit({ user, tableLabel: '家賃入金', action: '追加', summary: `CSVインポートで${dedupedUpsert.length}件を取り込み` })
       }
@@ -461,11 +497,23 @@ function RentPaymentCsvImportPanel({ allRecords, rentPayments, onChanged, canEdi
   )
 }
 
-export default function MasterImportPanel({ allRecords, rentPayments, onChanged, canEditMaster, canEditRentPayments, user }) {
+export default function MasterImportPanel({
+  allRecords, rentPayments, periodLocks, managementAcquisitions, managementAcquisitionRates,
+  onChanged, canEditMaster, canEditRentPayments, user,
+}) {
   return (
     <div>
       <MasterCsvImportPanel allRecords={allRecords} onChanged={onChanged} canEdit={canEditMaster} user={user} />
-      <RentPaymentCsvImportPanel allRecords={allRecords} rentPayments={rentPayments} onChanged={onChanged} canEdit={canEditRentPayments} user={user} />
+      <RentPaymentCsvImportPanel
+        allRecords={allRecords}
+        rentPayments={rentPayments}
+        periodLocks={periodLocks}
+        managementAcquisitions={managementAcquisitions}
+        managementAcquisitionRates={managementAcquisitionRates}
+        onChanged={onChanged}
+        canEdit={canEditRentPayments}
+        user={user}
+      />
     </div>
   )
 }
